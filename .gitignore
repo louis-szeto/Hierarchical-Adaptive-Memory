@@ -1,0 +1,31 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+*.egg
+
+# Experiment outputs (keep the directories via .gitkeep, ignore contents)
+results/**
+!results/.gitkeep
+data/**
+!data/.gitkeep
+
+# Local caches
+.cache/
+*.faiss
+*.index
+
+# OS
+.DS_Store
+
+# CodeCarbon
+emissions.csv
+.codecarbon/

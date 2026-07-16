@@ -1,0 +1,72 @@
+# Tiny, deterministic, CPU-only smoke test on the mock backend.
+# Produces watermarked SMOKE TEST outputs. NOT scientific results.
+name: smoke
+seed: 0
+conditions:
+  - memory_off
+  - full_history
+  - uncompressed_rag
+  - recency_fifo
+  - static_prototype
+  - uniform_quantization
+  - ham_memory
+  - random_tiering
+  - no_consolidation
+  - no_recency
+  - no_novelty
+  - no_reuse
+  - lexical_retrieval
+
+# Lifecycle stage of this run (research addendum §1): the runnable PoC is
+# inference-time external memory over frozen base weights (stage E).
+stage:
+  target_stage: E_inference_external_memory
+  base_weights_changed: false
+  persistent_across_sessions: true
+  integration_mode: external_context
+  trainable_router: false
+
+backend:
+  kind: mock
+  model_id: mock-1
+  max_new_tokens: 32
+  temperature: 0.0
+  seed: 0
+
+embedding:
+  kind: hash
+  dim: 256
+  normalize: true
+  seed: 0
+
+compression:
+  text_codec: auto      # zstd if installed, else zlib
+  vector_quant: int8
+  allocation: ham
+
+memory:
+  working_capacity: 6
+  retrieval_k: 5
+  token_budget: 256
+  chunk_max_chars: 300
+  consolidation_enabled: true
+  consolidation_radius: 0.25
+  retrieval: cosine
+
+dataset:
+  name: synthetic
+  num_examples: 12
+  num_sessions: 5
+  facts_per_session: 3
+  distractors_per_session: 3
+  seed: 0
+
+eval:
+  kind: string
+
+stats:
+  bootstrap_resamples: 2000
+  permutation_resamples: 2000
+  ci: 0.95
+  noninferiority_delta: 0.03
+  seed: 0

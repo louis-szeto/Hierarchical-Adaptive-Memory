@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install (core + zstd + dev, no heavy ML deps)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[zstd,dev]"
+      - name: Run unit + smoke-pipeline tests
+        run: python -m pytest -q
+      - name: Run tiny smoke experiment (mock backend)
+        run: |
+          python -m ham.cli run --config configs/smoke.yaml --out results/ci_smoke
+      - name: Regenerate watermarked tables/figures from the smoke run
+        run: |
+          python -m ham.cli report --run-dir results/ci_smoke --out results/ci_smoke/paper_artifacts
+      - name: Upload smoke artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-artifacts-${{ matrix.python-version }}
+          path: results/ci_smoke
+          if-no-files-found: warn

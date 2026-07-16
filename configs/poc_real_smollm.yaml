@@ -1,0 +1,77 @@
+# REAL MODEL, PROOF OF CONCEPT -- NOT publication evidence.
+#
+# A small, CPU-feasible real pretrained model (SmolLM2-135M-Instruct) on the
+# deterministic synthetic multi-session benchmark, over a limited example and
+# condition set. This exercises the *external_context* PoC (stage E) end to end
+# with genuinely downloaded weights so that the harness is shown to work on a
+# real tokenizer/model -- it is explicitly NOT a benchmark result.
+#
+# One-command run (downloads/caches the model on first use):
+#   ham run --config configs/poc_real_smollm.yaml --out results/poc_real_smollm
+#   ham report --run-dir results/poc_real_smollm --out results/poc_real_smollm/artifacts
+#
+# Because backend.kind == hf (not mock), outputs are NOT watermarked SMOKE TEST;
+# they are labeled REAL MODEL PROOF OF CONCEPT via the notes field and manifest.
+name: poc_real_smollm
+seed: 0
+notes: "REAL MODEL, PROOF OF CONCEPT -- small CPU model on synthetic data; not publication evidence."
+conditions:
+  - memory_off
+  - uncompressed_rag
+  - ham_memory
+
+stage:
+  target_stage: E_inference_external_memory
+  base_weights_changed: false
+  persistent_across_sessions: true
+  integration_mode: external_context
+  trainable_router: false
+
+backend:
+  kind: hf
+  model_id: HuggingFaceTB/SmolLM2-135M-Instruct
+  device: cpu
+  dtype: float32
+  quantization: null
+  max_new_tokens: 24
+  temperature: 0.0
+  seed: 0
+
+embedding:
+  kind: hash            # deterministic, no extra model download for the PoC
+  dim: 256
+  normalize: true
+  seed: 0
+
+compression:
+  text_codec: auto
+  vector_quant: int8
+  allocation: ham
+
+memory:
+  working_capacity: 6
+  retrieval_k: 5
+  token_budget: 256
+  chunk_max_chars: 300
+  consolidation_enabled: true
+  consolidation_radius: 0.25
+  retrieval: cosine
+
+dataset:
+  name: synthetic
+  num_examples: 6
+  num_sessions: 4
+  facts_per_session: 3
+  distractors_per_session: 2
+  sample_limit: 6
+  seed: 0
+
+eval:
+  kind: string
+
+stats:
+  bootstrap_resamples: 2000
+  permutation_resamples: 2000
+  ci: 0.95
+  noninferiority_delta: 0.03
+  seed: 0

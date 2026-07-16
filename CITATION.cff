@@ -1,0 +1,56 @@
+cff-version: 1.2.0
+message: "If you use this experiment harness, please cite it as below."
+title: "Hierarchical Adaptive Memory for Language Models: A Tiered, Utility-Driven Memory Layer with Variable-Precision Consolidation"
+abstract: >
+  **Background**: Language models increasingly require information that outlives a single context window, spanning multi-session 
+  dialogue and long documents. The prevailing solution is retrieval augmentation around a frozen model, which pays
+  the cost of remembering in prompt tokens, stored bytes, and query-time latency, and which typically treats memory as a
+  passive external store rather than a participant in computation.
+  **Objectives**: This article specifies Hierarchical Adaptive Memory (HAM), a tiered memory layer that organizes information
+  into working, episodic, and semantic tiers; routes and fuses retrieved memory into the reasoning blocks; and applies explicit
+  utility-driven promotion, forgetting, and consolidation with variable-precision serialization. The aim is a defensible design
+  and an honest development-stage account, not a claim of benchmark superiority.
+  **Methods**: The implemented proof of concept is an inference-time plug-in for a frozen instruction-tuned model, with
+  persistent memory realized through external-context injection and no weight updates. A proposed full layer positions HAM
+  alongside Transformer or Mamba blocks with an optionally trainable router and fusion. Evaluation compares HAM against
+  no-persistent-memory, uncompressed retrieval, and controlled ablations under a shared frozen model and evaluator.
+  **Results**: A real-model proof of concept with a 135M-parameter frozen model on six synthetic examples shows HAM matching
+  uncompressed retrieval on task score and retrieval recall while reducing physical store bytes by approximately 3.0x. These
+  are proof-of-concept observations, not publication-scale evidence.
+  **Conclusions**: HAM offers a coherent, auditable memory layer whose design-level advantages remain hypotheses; publication
+authors:
+  - family-names: Szeto
+  - given-names: "K. C."
+type: software
+license: Apache-2.0
+version: 0.1.0
+date-released: "2026-07-16"
+keywords:
+  - large language models
+  - memory
+  - rate-distortion theory
+  - information bottleneck
+  - minimum description length
+  - compression
+  - retrieval-augmented generation
+references:
+  - type: article
+    title: "A Mathematical Theory of Communication"
+    authors: [{family-names: Shannon, given-names: "Claude E."}]
+    year: 1948
+  - type: article
+    title: "The Information Bottleneck Method"
+    authors:
+      - {family-names: Tishby, given-names: "Naftali"}
+      - {family-names: Pereira, given-names: "Fernando C."}
+      - {family-names: Bialek, given-names: "William"}
+    year: 2000
+    url: "https://arxiv.org/abs/physics/0004057"
+  - type: article
+    title: "LongMemEval: Benchmarking Chat Assistants on Long-Term Interactive Memory"
+    year: 2024
+    url: "https://github.com/xiaowu0162/LongMemEval"
+  - type: article
+    title: "Evaluating Very Long-Term Conversational Memory of LLM Agents (LoCoMo)"
+    year: 2024
+    url: "https://github.com/snap-research/locomo"

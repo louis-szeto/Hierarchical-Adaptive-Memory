@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ham-memory-experiment"
+version = "0.1.0"
+description = "Utility-Rate Adaptive (Hierarchical Adaptive) Memory for frozen LLMs: a rate-distortion / IB / MDL treatment with byte-honest reporting."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "K. C. Szeto" }]
+keywords = ["llm", "memory", "rate-distortion", "information-bottleneck", "compression", "retrieval"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Lean core dependencies: everything needed for the mock backend, the
+# deterministic synthetic benchmark, compression, serialization, statistics,
+# and report generation runs on these alone.
+dependencies = [
+    "numpy>=1.23",
+    "scipy>=1.9",
+    "PyYAML>=6.0",
+    "pandas>=1.5",
+]
+
+[project.optional-dependencies]
+# Real Hugging Face causal-LM backend + embeddings.
+hf = [
+    "transformers>=4.40",
+    "torch>=2.1",
+    "sentence-transformers>=2.2",
+    "accelerate>=0.27",
+]
+# Aggressive vector index + product quantization.
+faiss = ["faiss-cpu>=1.7"]
+# Better textual codec than the stdlib fallback.
+zstd = ["zstandard>=0.21"]
+# Weight quantization for publication-scale (7B/8B) models.
+quant = ["bitsandbytes>=0.43"]
+# Real HF dataset loaders (LongMemEval / LoCoMo / LongBench).
+datasets = ["datasets>=2.18", "huggingface_hub>=0.23"]
+# Plotting for figures.
+plot = ["matplotlib>=3.6"]
+# Resource / energy instrumentation.
+instr = ["psutil>=5.9", "codecarbon>=2.3"]
+# Testing.
+dev = ["pytest>=7.0"]
+# Everything.
+all = [
+    "transformers>=4.40", "torch>=2.1", "sentence-transformers>=2.2", "accelerate>=0.27",
+    "faiss-cpu>=1.7", "zstandard>=0.21", "datasets>=2.18", "huggingface_hub>=0.23",
+    "matplotlib>=3.6", "psutil>=5.9", "codecarbon>=2.3", "pytest>=7.0",
+]
+
+[project.scripts]
+ham = "ham.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/louis-szeto/Hierarchical-Adaptive-Memory"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

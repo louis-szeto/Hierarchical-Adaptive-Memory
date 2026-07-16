@@ -1,0 +1,160 @@
+{
+  "note": "Machine-readable crosswalk. Executable conditions are measured locally under one frozen model; citation-only methods are external literature we compare against conceptually and DO NOT reproduce.",
+  "executable_conditions": [
+    {
+      "condition": "memory_off",
+      "in_headline_baseline_table": "yes",
+      "purpose": "Frozen-LLM control with no persistent memory; isolates what the model answers from parametric knowledge alone",
+      "target_stage": "E_inference_external_memory",
+      "integration_mode": "external_context",
+      "closest_literature_category": "no-memory / closed-book control",
+      "reproduction_label": "implemented control (not a reproduction)"
+    },
+    {
+      "condition": "full_history",
+      "in_headline_baseline_table": "yes",
+      "purpose": "Upper-bound context control: entire concatenated multi-session history in-context uncompressed",
+      "target_stage": "E_inference_external_memory",
+      "integration_mode": "external_context",
+      "closest_literature_category": "full-context prompting (cf. long-context / Mem0 full-context eval)",
+      "reproduction_label": "implemented analogue (not a reproduction)"
+    },
+    {
+      "condition": "uncompressed_rag",
+      "in_headline_baseline_table": "yes",
+      "purpose": "RAG-style exact retrieval over full-text chunks with a float32 index; the fidelity anchor for compression comparisons",
+      "target_stage": "E_inference_external_memory",
+      "integration_mode": "external_context",
+      "closest_literature_category": "retrieval-augmented external memory (cf. MemGPT / Mem0)",
+      "reproduction_label": "implemented analogue (not a reproduction)"
+    },
+    {
+      "condition": "recency_fifo",
+      "in_headline_baseline_table": "yes",
+      "purpose": "Recency/FIFO forgetting: evict oldest items regardless of utility; ablates HAM's utility-driven retention",
+      "target_stage": "E_inference_external_memory",
+      "integration_mode": "external_context",
+      "closest_literature_category": "fixed-window / FIFO forgetting (cf. Mamba selective forget",
+      "reproduction_label": " sliding-window caches)",
+      "null": [
+        "implemented analogue (not a reproduction)"
+      ]
+    },
+    {
+      "condition": "static_prototype",
+      "in_headline_baseline_table": "yes",
+      "purpose": "Static pre-computed prototypes with no adaptive promotion/consolidation over time",
+      "target_stage": "E_inference_external_memory",
+      "integration_mode": "external_context",
+      "closest_literature_category": "static memory index (cf. A-MEM without evolution",
+      "reproduction_label": " HippoRAG index)",
+      "null": [
+        "implemented analogue (not a reproduction)"
+      ]
+    },
+    {
+      "condition": "uniform_quantization",
+      "in_headline_baseline_table": "yes",
+      "purpose": "HAM store with uniform (non-utility) bit allocation; isolates the value of utility-driven precision",
+      "target_stage": "E_inference_external_memory",
+      "integration_mode": "external_context",
+      "closest_literature_category": "uniform post-training quantization (cf. AQLM improves over uniform)",
+      "reproduction_label": "implemented analogue (not a reproduction)"
+    },
+    {
+      "condition": "ham_memory",
+      "in_headline_baseline_table": "yes",
+      "purpose": "HAM: working/episodic/semantic tiers + consolidation + utility-driven bit allocation + VQ + text codec",
+      "target_stage": "E_inference_external_memory",
+      "integration_mode": "external_context",
+      "closest_literature_category": "this work (hierarchical adaptive memory)",
+      "reproduction_label": "this work"
+    },
+    {
+      "condition": "random_tiering",
+      "in_headline_baseline_table": "no",
+      "purpose": "HAM with random tier assignment; control that removes the importance signal from tiering",
+      "target_stage": "E_inference_external_memory",
+      "integration_mode": "external_context",
+      "closest_literature_category": "random-allocation control",
+      "reproduction_label": "implemented control (not a reproduction)"
+    },
+    {
+      "condition": "no_consolidation",
+      "in_headline_baseline_table": "no",
+      "purpose": "HAM without episodic->semantic consolidation; ablates the consolidation stage",
+      "target_stage": "E_inference_external_memory",
+      "integration_mode": "external_context",
+      "closest_literature_category": "ablation of HAM consolidation",
+      "reproduction_label": "implemented ablation (not a reproduction)"
+    },
+    {
+      "condition": "no_recency",
+      "in_headline_baseline_table": "no",
+      "purpose": "HAM without the recency importance signal",
+      "target_stage": "E_inference_external_memory",
+      "integration_mode": "external_context",
+      "closest_literature_category": "ablation of HAM recency signal",
+      "reproduction_label": "implemented ablation (not a reproduction)"
+    },
+    {
+      "condition": "no_novelty",
+      "in_headline_baseline_table": "no",
+      "purpose": "HAM without the novelty importance signal",
+      "target_stage": "E_inference_external_memory",
+      "integration_mode": "external_context",
+      "closest_literature_category": "ablation of HAM novelty signal",
+      "reproduction_label": "implemented ablation (not a reproduction)"
+    },
+    {
+      "condition": "no_reuse",
+      "in_headline_baseline_table": "no",
+      "purpose": "HAM without the reuse importance signal",
+      "target_stage": "E_inference_external_memory",
+      "integration_mode": "external_context",
+      "closest_literature_category": "ablation of HAM reuse signal",
+      "reproduction_label": "implemented ablation (not a reproduction)"
+    },
+    {
+      "condition": "lexical_retrieval",
+      "in_headline_baseline_table": "no",
+      "purpose": "HAM with lexical-only (BM25-lite) retrieval instead of dense cosine",
+      "target_stage": "E_inference_external_memory",
+      "integration_mode": "external_context",
+      "closest_literature_category": "lexical retrieval baseline (BM25-family)",
+      "reproduction_label": "implemented analogue (not a reproduction)"
+    }
+  ],
+  "citation_only_methods": [
+    {
+      "method": "Compression-Aware Memory Controller (hardware)",
+      "target_stage": "hardware/systems",
+      "why_not_runnable": "ASIC/FPGA memory controller; out of scope for an LLM-memory software harness",
+      "reproduction_label": "cited only; NOT implemented or reproduced"
+    },
+    {
+      "method": "RETRO",
+      "target_stage": "B_training_memory",
+      "why_not_runnable": "requires trillion-token retrieval pretraining; cross-attention fusion appears only as an analogue in the architecture prototype",
+      "reproduction_label": "cited only; NOT reproduced"
+    },
+    {
+      "method": "Mamba / Titans / Infini-attention",
+      "target_stage": "F_architecture_level",
+      "why_not_runnable": "architecture-level stateful models needing training; only a shape/gradient stand-in exists in ham.architecture",
+      "reproduction_label": "cited only; NOT reproduced"
+    },
+    {
+      "method": "AQLM",
+      "target_stage": "D_inference_kv_compression",
+      "why_not_runnable": "additive-quantization codebook training over model weights; only the uniform-vs-utility contrast is exercised locally",
+      "reproduction_label": "cited only; NOT reproduced"
+    },
+    {
+      "method": "LLM-KICK / Activation Compression",
+      "target_stage": "D_inference_kv_compression",
+      "why_not_runnable": "KV-cache/activation compression benchmark; the PoC compresses an external store, not the KV cache",
+      "reproduction_label": "cited only; NOT reproduced"
+    }
+  ]
+}
