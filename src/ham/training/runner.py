@@ -106,6 +106,14 @@ def run_finetune(cfg: FinetuneExperimentConfig, out_dir: str) -> dict:
                          for k, v in backend.model.state_dict().items()}
 
     leg_curves = {}
+    # Zero-shot held-out benchmark: evaluate general-knowledge QA (memory off) on
+    # the pretrained baseline and after each leg's final weights, to measure how
+    # much each arm has forgotten. Only applicable to the real (hf) trainer.
+    from .zeroshot import eval_zeroshot
+    zeroshot = {"baseline": None, "legs": {}}
+    if cfg.finetune.trainer == "hf":
+        zeroshot["baseline"] = eval_zeroshot(backend)["accuracy"]
+
     for leg in FINETUNE_LEGS:
         if cfg.finetune.trainer == "mock":
             from .mock import MockLegTrainer
@@ -115,6 +123,9 @@ def run_finetune(cfg: FinetuneExperimentConfig, out_dir: str) -> dict:
             backend.model.load_state_dict(initial_state)
             trainer = HFLegTrainer(leg, backend, embedder, cfg, examples, corpus_facts)
         leg_curves[leg] = trainer.run()
+        # Evaluate zero-shot on the final weights (before the next leg resets).
+        if cfg.finetune.trainer == "hf":
+            zeroshot["legs"][leg] = eval_zeroshot(backend)["accuracy"]
         # Free this leg's optimizer/activations before the next leg.
         del trainer
         if cfg.finetune.trainer == "hf":
@@ -146,6 +157,7 @@ def run_finetune(cfg: FinetuneExperimentConfig, out_dir: str) -> dict:
                "n_examples": len(examples),
                "n_corpus_facts": len(corpus_facts),
                "step0_baseline_check": baseline_check,
+               "zeroshot_forgetting": zeroshot,
                "fair_control": fair_control})
     with open(os.path.join(out_dir, "manifest.json"), "w") as fh:
         json.dump(manifest, fh, indent=2)
@@ -182,6 +194,7 @@ def run_finetune(cfg: FinetuneExperimentConfig, out_dir: str) -> dict:
         "n_checkpoints_per_leg": len(next(iter(leg_curves.values()))),
         "step0_baseline_check": baseline_check,
         "aggregate": aggregate, "stats": stats_out,
+        "zeroshot": zeroshot,
         "cost_ratio": _overall_ratio(aggregate),
     }
     with open(os.path.join(out_dir, "summary.json"), "w") as fh:

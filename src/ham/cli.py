@@ -100,6 +100,7 @@ def _cmd_finetune(args) -> int:
         "target_kind": summary["target_kind"],
         "cost_ratio_ham_over_weights": {
             k: v for k, v in ratio.items() if k != "interpretation"},
+        "zeroshot_forgetting": summary.get("zeroshot"),
     }, indent=2))
     if summary["is_smoke"]:
         print("\n[NOTE] Mock trainer => SMOKE TEST outputs. Not scientific results.",
