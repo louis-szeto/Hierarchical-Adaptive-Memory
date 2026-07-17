@@ -1,0 +1,42 @@
+# Stage-D KV-cache-compression experiment -- SMOKE (mock trainer).
+#
+# Deterministic MockKVTrainer (no torch): synthetic bytes/latency/quality curves
+# whose HAM advantage scales with redundancy. Outputs flagged is_smoke=true and
+# watermarked SMOKE TEST -- plumbing/CI checks, NOT scientific results.
+#
+#   ham kvbench        --config configs/kvbench_smoke.yaml --out results/kvbench_smoke
+#   ham kvbench-report --run-dir results/kvbench_smoke     --out results/kvbench_smoke/artifacts
+name: kvbench_smoke
+seed: 0
+notes: "SMOKE TEST -- mock kvbench trainer synthetic curves; not scientific results."
+
+stage:
+  target_stage: D_inference_kv_compression
+  base_weights_changed: false
+  persistent_across_sessions: false
+  integration_mode: kv_cache_compression
+  trainable_router: false
+
+backend:
+  kind: mock
+  model_id: mock-1
+
+stats:
+  bootstrap_resamples: 2000
+  permutation_resamples: 2000
+  ci: 0.95
+  seed: 0
+
+kvbench:
+  trainer: mock
+  conditions: [full_kv, ham_kv, uniform_quant_kv, h2o_kv, random_evict_kv, ham_no_cluster]
+  redundancy_levels: [0.0, 0.5, 0.9]
+  keep_ratios: [0.25, 0.5, 0.75]
+  cluster_radius: 0.25
+  kv_bits: 4
+  n_contexts: 4
+  context_len: 256
+  n_distinct_spans: 32
+  span_len: 8
+  target_quality: 0.9
+  device: cpu

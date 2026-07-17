@@ -1,10 +1,12 @@
 """Command-line interface.
 
-    ham run    --config configs/smoke.yaml --out results/smoke
-    ham report --run-dir results/smoke --out results/smoke/paper_artifacts
-    ham export --run-dir results/smoke --out results/smoke/paper_artifacts   (alias of report)
-    ham info                                                                  (env diagnostics)
-    ham arch-demo                                                             (toy HAM-layer demo)
+    ham run             --config configs/smoke.yaml --out results/smoke
+    ham report          --run-dir results/smoke --out results/smoke/paper_artifacts
+    ham export          --run-dir results/smoke --out results/smoke/paper_artifacts   (alias of report)
+    ham info                                                                                (env diagnostics)
+    ham arch-demo                                                                           (toy HAM-layer demo)
+    ham finetune         --config configs/finetune_smoke.yaml --out results/finetune_smoke   (stage-C cost-to-target)
+    ham finetune-report  --run-dir results/finetune_smoke --out results/finetune_smoke/artifacts
 """
 
 from __future__ import annotations
@@ -78,6 +80,96 @@ def _cmd_arch_demo(args) -> int:
     return 0
 
 
+def _cmd_finetune(args) -> int:
+    """Run the stage-C fine-tuning cost-to-target experiment."""
+    from .config import load_finetune_config
+    from .training.runner import run_finetune
+
+    cfg = load_finetune_config(args.config)
+    if args.limit is not None:
+        cfg.dataset.sample_limit = args.limit
+        cfg.dataset.num_examples = args.limit
+    summary = run_finetune(cfg, args.out)
+    ratio = summary["cost_ratio"]
+    print(json.dumps({
+        "out_dir": summary["out_dir"], "experiment": summary["experiment"],
+        "is_smoke": summary["is_smoke"], "trainer": summary["trainer"],
+        "target_stage": summary["target_stage"],
+        "base_weights_changed": summary["base_weights_changed"],
+        "target_accuracy": summary["target_accuracy"],
+        "target_kind": summary["target_kind"],
+        "cost_ratio_ham_over_weights": {
+            k: v for k, v in ratio.items() if k != "interpretation"},
+    }, indent=2))
+    if summary["is_smoke"]:
+        print("\n[NOTE] Mock trainer => SMOKE TEST outputs. Not scientific results.",
+              file=sys.stderr)
+    return 0
+
+
+def _cmd_finetune_report(args) -> int:
+    """Build finetune tables/figure from a finetune run dir."""
+    from .training.report import generate
+
+    res = generate(args.run_dir, args.out)
+    print(json.dumps(res, indent=2, default=str))
+    return 0
+
+
+def _cmd_archbench(args) -> int:
+    """Run the stage-F toy architecture memory-block experiment."""
+    from .config import load_archbench_config
+    from .archbench.runner import run_archbench
+
+    cfg = load_archbench_config(args.config)
+    summary = run_archbench(cfg, args.out)
+    print(json.dumps({
+        "out_dir": summary["out_dir"], "experiment": summary["experiment"],
+        "is_smoke": summary["is_smoke"], "trainer": summary["trainer"],
+        "task": summary["task"], "n_curves": summary["n_curves"],
+    }, indent=2))
+    if summary["is_smoke"]:
+        print("\n[NOTE] Mock trainer => SMOKE TEST outputs. Not scientific results.",
+              file=sys.stderr)
+    return 0
+
+
+def _cmd_archbench_report(args) -> int:
+    """Build archbench tables/figures from an archbench run dir."""
+    from .archbench.report import generate
+
+    res = generate(args.run_dir, args.out)
+    print(json.dumps(res, indent=2, default=str))
+    return 0
+
+
+def _cmd_kvbench(args) -> int:
+    """Run the stage-D KV-cache-compression experiment (real frozen model)."""
+    from .config import load_kvbench_config
+    from .kvbench.runner import run_kvbench
+
+    cfg = load_kvbench_config(args.config)
+    summary = run_kvbench(cfg, args.out)
+    print(json.dumps({
+        "out_dir": summary["out_dir"], "experiment": summary["experiment"],
+        "is_smoke": summary["is_smoke"], "trainer": summary["trainer"],
+        "n_results": summary["n_results"],
+    }, indent=2))
+    if summary["is_smoke"]:
+        print("\n[NOTE] Mock trainer => SMOKE TEST outputs. Not scientific results.",
+              file=sys.stderr)
+    return 0
+
+
+def _cmd_kvbench_report(args) -> int:
+    """Build kvbench tables/figures from a kvbench run dir."""
+    from .kvbench.report import generate
+
+    res = generate(args.run_dir, args.out)
+    print(json.dumps(res, indent=2, default=str))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ham", description="HAM memory experiment harness")
     p.add_argument("--version", action="version", version=f"ham {__version__}")
@@ -111,6 +203,43 @@ def build_parser() -> argparse.ArgumentParser:
     ad.add_argument("--fusion", default="cross_attention",
                     choices=["cross_attention", "gated_residual"])
     ad.set_defaults(func=_cmd_arch_demo)
+
+    ft = sub.add_parser("finetune",
+                        help="run the stage-C fine-tuning cost-to-target experiment")
+    ft.add_argument("--config", required=True)
+    ft.add_argument("--out", required=True)
+    ft.add_argument("--limit", type=int, default=None, help="cap number of examples")
+    ft.set_defaults(func=_cmd_finetune)
+
+    ftr = sub.add_parser("finetune-report",
+                         help="build finetune tables/figure from a finetune run dir")
+    ftr.add_argument("--run-dir", required=True)
+    ftr.add_argument("--out", required=True)
+    ftr.set_defaults(func=_cmd_finetune_report)
+
+    ab = sub.add_parser("archbench",
+                        help="run the stage-F toy architecture memory-block experiment")
+    ab.add_argument("--config", required=True)
+    ab.add_argument("--out", required=True)
+    ab.set_defaults(func=_cmd_archbench)
+
+    abr = sub.add_parser("archbench-report",
+                         help="build archbench tables/figures from an archbench run dir")
+    abr.add_argument("--run-dir", required=True)
+    abr.add_argument("--out", required=True)
+    abr.set_defaults(func=_cmd_archbench_report)
+
+    kv = sub.add_parser("kvbench",
+                        help="run the stage-D KV-cache-compression experiment")
+    kv.add_argument("--config", required=True)
+    kv.add_argument("--out", required=True)
+    kv.set_defaults(func=_cmd_kvbench)
+
+    kvr = sub.add_parser("kvbench-report",
+                         help="build kvbench tables/figures from a kvbench run dir")
+    kvr.add_argument("--run-dir", required=True)
+    kvr.add_argument("--out", required=True)
+    kvr.set_defaults(func=_cmd_kvbench_report)
     return p
 
 

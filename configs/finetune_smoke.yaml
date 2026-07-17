@@ -1,0 +1,93 @@
+# Stage-C fine-tuning cost-to-target experiment -- SMOKE (mock trainer).
+#
+# NEW DESIGN (per-leg training with HAM injected into ham leg's training):
+#
+# Two legs are trained INDEPENDENTLY from the IDENTICAL baseline model:
+# - weights_only  -> SFT on no-context prompts (Question -> Answer)
+# - ham_augmented -> SFT on context-augmented prompts (Context + Question -> Answer)
+#
+# Uses the deterministic MockLegTrainer (no torch): a synthetic learning curve per
+# leg. Outputs are flagged is_smoke=true and watermarked SMOKE TEST -- they are
+# plumbing/CI checks, NOT scientific results.
+#
+#   ham finetune        --config configs/finetune_smoke.yaml --out results/finetune_smoke
+#   ham finetune-report --run-dir results/finetune_smoke     --out results/finetune_smoke/artifacts
+name: finetune_smoke
+seed: 0
+notes: "SMOKE TEST -- mock trainer synthetic curve; not scientific results."
+
+conditions:
+  - weights_only
+  - ham_augmented
+
+stage:
+  target_stage: C_finetuning
+  base_weights_changed: false        # truthful: the mock trainer changes no weights
+  persistent_across_sessions: true
+  integration_mode: external_context
+  trainable_router: false
+
+backend:
+  kind: mock
+  model_id: mock-1
+  max_new_tokens: 16
+  temperature: 0.0
+  seed: 0
+
+embedding:
+  kind: hash
+  dim: 128
+  normalize: true
+  seed: 0
+
+compression:
+  text_codec: auto
+  vector_quant: int8
+  allocation: ham
+
+memory:
+  working_capacity: 6
+  retrieval_k: 5
+  token_budget: 256
+  chunk_max_chars: 300
+  consolidation_enabled: true
+  consolidation_radius: 0.25
+  retrieval: cosine
+
+dataset:
+  name: synthetic
+  num_examples: 12
+  num_sessions: 4
+  facts_per_session: 3
+  distractors_per_session: 2
+  seed: 0
+
+eval:
+  kind: string
+
+stats:
+  bootstrap_resamples: 2000
+  permutation_resamples: 2000
+  ci: 0.95
+  seed: 0
+
+finetune:
+  trainer: mock
+  optimizer: adamw
+  learning_rate: 1e-4
+  batch_size: 4
+  max_steps: 100
+  checkpoint_every: 10
+  tokens_per_step: 1024
+  target_accuracy: 0.95              # NEW: non-degenerate threshold (both legs require training)
+  # Parity mode parameters (only used when target_accuracy is null)
+  parity_with: weights_only
+  noninferiority_delta: 0.03
+  # Deterministic synthetic-curve parameters (mock only).
+  # NEW curve behavior: weights climbs from 0, ham climbs from retrieval baseline.
+  mock_weights_asymptote: 1.0        # weights_only can reach 1.0
+  mock_weights_rate: 2.0e-4          # faster learning
+  mock_ham_baseline: 0.92            # retrieval-only at step 0 (HIGH to avoid echo bug)
+  mock_ham_asymptote: 1.0           # ham can also reach ceiling
+  mock_ham_rate: 3.0e-4             # ham learns slightly faster
+  mock_seconds_per_step: 0.25

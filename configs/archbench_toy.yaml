@@ -1,0 +1,53 @@
+# Stage-F toy architecture memory-block experiment -- REAL torch (toy model).
+#
+# Trains identical toy LMs differing ONLY in their memory-block policy (standard
+# FlatMemory vs HAM-compressed), across the redundancy lever. Headline: HAM/standard
+# bytes- & latency-ratios vs redundancy (the slope proves 'frequency' is the
+# mechanism). Labeled REAL MODEL, PROOF OF CONCEPT (toy architecture, not a claim
+# about production transformers).
+#
+# Requires torch: pip install -e ".[hf]"
+#   ham archbench        --config configs/archbench_toy.yaml --out results/archbench_toy
+#   ham archbench-report --run-dir results/archbench_toy     --out results/archbench_toy/artifacts
+name: archbench_toy
+seed: 0
+notes: "REAL MODEL, PROOF OF CONCEPT -- toy architecture memory-block compression; not a production-transformer claim."
+
+stage:
+  target_stage: F_architecture_level
+  base_weights_changed: true         # truthful: the torch trainer trains the toy weights
+  persistent_across_sessions: true
+  integration_mode: hidden_state_fusion
+  trainable_router: true
+
+stats:
+  bootstrap_resamples: 2000
+  permutation_resamples: 2000
+  ci: 0.95
+  seed: 0
+
+archbench:
+  trainer: torch
+  task: both            # associative recall (primary) + next-token LM (secondary)
+  regime: pretrain
+  conditions: [no_memory, standard_memory, ham_memory, ham_uniform, ham_no_consolidation, ham_random_alloc]
+  redundancy_levels: [0.0, 0.5, 0.9]
+  dim: 64
+  n_layers: 2
+  vocab: 256
+  n_heads: 4
+  memory_layer: 0
+  top_k: 4
+  capacity: 512
+  consolidation_radius: 0.25
+  semantic_bits: 4
+  optimizer: adamw
+  learning_rate: 1.0e-3
+  batch_size: 16
+  max_steps: 200
+  checkpoint_every: 20
+  seq_len: 64
+  n_train_streams: 256
+  n_eval_streams: 64
+  target_quality: 0.9
+  device: cpu          # toy is small & CPU-safe (won't crash a shared display GPU)

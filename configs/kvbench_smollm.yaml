@@ -1,0 +1,51 @@
+# Stage-D KV-cache-compression experiment -- REAL torch (frozen SmolLM2-135M).
+#
+# Compresses a frozen model's KV cache under each policy and measures byte-honest
+# KV size, decode latency, and next-token quality (agreement vs full_kv + accuracy),
+# across the redundancy lever. Headline: HAM/full bytes- & latency-ratios vs
+# redundancy (the slope proves frequency is the mechanism). Labeled REAL MODEL,
+# PROOF OF CONCEPT (stage-D PoC; not a claim about production KV-compression).
+#
+# Requires torch + transformers: pip install -e ".[hf]"
+#   ham kvbench        --config configs/kvbench_smollm.yaml --out results/kvbench_smollm
+#   ham kvbench-report --run-dir results/kvbench_smollm     --out results/kvbench_smollm/artifacts
+name: kvbench_smollm
+seed: 0
+notes: "REAL MODEL, PROOF OF CONCEPT -- KV-cache compression on SmolLM2-135M; not a production claim."
+
+stage:
+  target_stage: D_inference_kv_compression
+  base_weights_changed: false          # frozen model; only KV compressed
+  persistent_across_sessions: false
+  integration_mode: kv_cache_compression
+  trainable_router: false
+
+backend:
+  kind: hf
+  model_id: HuggingFaceTB/SmolLM2-135M-Instruct
+  device: cpu                          # small model; CPU-safe (shared-GPU crash avoided)
+  dtype: float32
+  quantization: null
+  max_new_tokens: 8
+  temperature: 0.0
+  seed: 0
+
+stats:
+  bootstrap_resamples: 2000
+  permutation_resamples: 2000
+  ci: 0.95
+  seed: 0
+
+kvbench:
+  trainer: torch
+  conditions: [full_kv, ham_kv, uniform_quant_kv, h2o_kv, random_evict_kv, ham_no_cluster]
+  redundancy_levels: [0.0, 0.5, 0.9]
+  keep_ratios: [0.25, 0.5, 0.75]
+  cluster_radius: 0.25
+  kv_bits: 4
+  n_contexts: 16
+  context_len: 512
+  n_distinct_spans: 32
+  span_len: 8
+  target_quality: 0.9
+  device: cpu

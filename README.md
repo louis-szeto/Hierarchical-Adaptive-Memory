@@ -175,6 +175,72 @@ python -m ham.cli run    --config configs/poc_real_smollm.yaml --out results/poc
 python -m ham.cli report --run-dir results/poc_real_smollm --out results/poc_real_smollm/artifacts
 ```
 
+## Stage-C fine-tuning experiment (cost-to-target)
+
+A second, deliberately-separate experiment asks the **training-time** analogue of
+the stage-E study: how many fine-tuning **tokens / wall-clock / optimizer steps**
+does it take to reach a target knowledge accuracy, **with HAM at eval** vs
+**without**? Both arms are fine-tuned identically; only the eval-time prompt
+differs (`weights_only` = memory off, recall from weights; `ham_augmented` = HAM
+retrieval). Fine-tuning modifies the weights (lifecycle **stage C**), so this is
+recorded honestly (`target_stage: C_finetuning`, `base_weights_changed: true`)
+and never blended with the frozen-weight claims. See
+`docs/FINETUNING_PROTOCOL.md` (hypotheses FT1–FT3).
+
+## Stage-F architecture memory-block experiment (toy model)
+
+A mechanistic toy-architecture proof of the **compression** thesis: identical
+toy LMs differing ONLY in their memory-block policy (standard `FlatMemory` vs
+HAM-compressed `HamMemory` with int4 prototypes + frequency-driven
+consolidation), measured at iso-quality on **byte-honest memory size** and
+**inference latency**, with a **redundancy lever** and ablations
+(`ham_uniform`/`ham_no_consolidation`/`ham_random_alloc`) that isolate the
+frequency mechanism. See `docs/ARCHBENCH_PROTOCOL.md`.
+
+```bash
+make archbench-smoke   # deterministic mock trainer (watermarked SMOKE TEST)
+make archbench-toy     # real torch toy model (needs [hf])
+ham archbench        --config configs/archbench_toy.yaml --out results/archbench_toy
+ham archbench-report --run-dir results/archbench_toy     --out results/archbench_toy/artifacts
+```
+
+Headline: HAM/standard bytes- and latency-ratios vs redundancy (the slope proves
+frequency is the mechanism), plus the ablation table. Honest scope: a controlled
+toy proof-of-mechanism (small toy LM, synthetic corpora), labeled stage-F PoC.
+
+## Stage-D KV-cache compression experiment (real frozen model)
+
+Compresses a frozen model's KV cache under each policy and measures byte-honest
+KV size, decode latency, and next-token quality (agreement vs `full_kv`), across
+the redundancy lever; ablations (`uniform_quant_kv`/`h2o_kv`/`random_evict_kv`/
+`ham_no_cluster`) isolate precision vs frequency-dedup. See
+`docs/KVBENCH_PROTOCOL.md`.
+
+```bash
+make kvbench-smoke   # deterministic mock (watermarked SMOKE TEST)
+make kvbench-real    # frozen SmolLM2-135M (needs [hf])
+ham kvbench        --config configs/kvbench_smollm.yaml --out results/kvbench_smollm
+ham kvbench-report --run-dir results/kvbench_smollm     --out results/kvbench_smollm/artifacts
+```
+
+Honest scope: HAM dominates the quality-vs-bytes Pareto at high redundancy on the
+real model (frequency-weighted position retention + int4), beating random/norm
+selection at every keep-ratio; the ablation isolates frequency as the mechanism.
+Stage-D PoC on one small frozen model — see `docs/KVBENCH_PROTOCOL.md`.
+
+```bash
+# Deterministic, watermarked SMOKE TEST (mock trainer, no torch):
+make finetune-smoke
+# Real SmolLM2-135M SFT, CPU-feasible (needs the [hf] extra; slow):
+pip install -e ".[hf]"
+python -m ham.cli finetune        --config configs/finetune_smollm.yaml --out results/finetune_smollm
+python -m ham.cli finetune-report --run-dir results/finetune_smollm     --out results/finetune_smollm/artifacts
+```
+
+Headline output is the **cost-to-target** per arm and the `ham/weights` ratio
+(`<1.0` ⇒ HAM reached the target with less fine-tuning). With no target set, the
+default target is parity with the saturated `weights_only` accuracy − δ.
+
 ## Regenerate tables/figures
 
 ```bash
@@ -221,9 +287,10 @@ src/ham/
   compression/   text_codec (zstd/zlib), vector_quant (int8/int4/PQ), serialize (real bytes)
   memory/        store, importance, consolidation, retrieval, ham orchestrator
   architecture/  OPTIONAL stage-F prototype: layer (router/fusion/tiers/HAMBlock) + toy demo
+  training/      OPTIONAL stage-C fine-tuning cost-to-target experiment (mock + hf trainers)
   datasets/      synthetic (local, with gold-memory ids), longmemeval, locomo adapters
   metrics.py stats.py instrumentation.py manifest.py runner.py report.py cli.py config.py
-configs/         smoke, synthetic, longmemeval, locomo, publication_7b, poc_real_smollm
+configs/         smoke, synthetic, longmemeval, locomo, publication_7b, poc_real_smollm, finetune_smoke, finetune_smollm
 docs/            STAGE_TAXONOMY, EXPERIMENT_PROTOCOL, METRICS_SCHEMA, REPRODUCIBILITY,
                  METHODOLOGY_APPENDIX, ARCHITECTURE, BASELINE_CROSSWALK (.csv/.json)
 tests/           quantization, serialize, importance/tiering, consolidation,
@@ -238,6 +305,14 @@ tests/           quantization, serialize, importance/tiering, consolidation,
 - `docs/METRICS_SCHEMA.md` — every logged field (incl. retrieval recall@k / MRR).
 - `docs/REPRODUCIBILITY.md` — seeds, manifests, dataset access, determinism caveats.
 - `docs/ARCHITECTURE.md` — the optional stage-F HAM layer (router/fusion/tiers/modes).
+- `docs/FINETUNING_PROTOCOL.md` — the optional stage-C fine-tuning cost-to-target
+  experiment (hypotheses FT1–FT3, fairness controls, failure criteria).
+- `docs/ARCHBENCH_PROTOCOL.md` — the optional stage-F toy-architecture memory-block
+  compression experiment (hypotheses AB1–AB4, redundancy lever, ablations, current
+  limitation + next step).
+- `docs/KVBENCH_PROTOCOL.md` — the optional stage-D KV-cache compression experiment
+  on a frozen model (hypotheses KV1–KV4, redundancy lever, ablations, honest
+  precision-vs-frequency findings).
 - `docs/METHODOLOGY_APPENDIX.md` — generic, venue-agnostic method description (no
   repo paths / CLI), suitable for an online appendix.
 - `docs/BASELINE_CROSSWALK.csv` / `.json` — condition → purpose / stage / literature.

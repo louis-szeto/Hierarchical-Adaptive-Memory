@@ -1,0 +1,100 @@
+# Stage-C fine-tuning cost-to-target experiment -- REAL MODEL, PROOF OF CONCEPT.
+#
+# NEW DESIGN (per-leg training with HAM injected into ham leg's training):
+#
+# Two legs are trained INDEPENDENTLY from the IDENTICAL baseline model:
+# - weights_only  -> SFT on no-context prompts (Question -> Answer)
+# - ham_augmented -> SFT on context-augmented prompts (Context + Question -> Answer)
+#
+# Both legs start from the same frozen checkpoint (step 0 invariant enforced), each
+# has its own optimizer/trajectory, and each is evaluated with its matching prompt
+# mode. The headline metric is cost-to-target per leg (optimizer steps / training
+# tokens / wall-clock to reach a common accuracy threshold T) plus the ham/weights
+# ratio.
+#
+# A small, GPU-feasible real pretrained model (SmolLM2-135M-Instruct) is
+# actually fine-tuned (SFT) on the synthetic fact corpus in checkpoints; at each
+# checkpoint each leg is evaluated with its matching prompt mode.
+# Headline: training tokens / wall-clock / optimizer-steps to reach the target
+# accuracy, and the ham/weights ratio. This demonstrates the harness end to end
+# on a real model -- it is explicitly NOT publication evidence.
+#
+# Requires torch + transformers:
+#   pip install -e ".[hf]"
+#   ham finetune        --config configs/finetune_smollm.yaml --out results/finetune_smollm
+#   ham finetune-report --run-dir results/finetune_smollm     --out results/finetune_smollm/artifacts
+#
+# Because backend.kind == hf and finetune.trainer == hf, outputs are NOT
+# watermarked SMOKE TEST; base_weights_changed is truthfully true.
+name: finetune_smollm
+seed: 0
+notes: "REAL MODEL, PROOF OF CONCEPT -- SmolLM2-135M fine-tuned on synthetic facts; not publication evidence."
+
+conditions:
+  - weights_only
+  - ham_augmented
+
+stage:
+  target_stage: C_finetuning
+  base_weights_changed: true         # truthful: the hf trainer updates the weights
+  persistent_across_sessions: true
+  integration_mode: external_context
+  trainable_router: false
+
+backend:
+  kind: hf
+  model_id: HuggingFaceTB/SmolLM2-135M-Instruct
+  device: cpu                       # CPU: 135M is CPU-feasible AND avoids exhausting a shared display GPU (a per-leg model-reload bug previously filled VRAM and hard-crashed the GPU). That leak is fixed (one model, reset between legs) so cuda works on a dedicated GPU, but cpu is the safe default.
+  dtype: float32
+  quantization: null
+  max_new_tokens: 16
+  temperature: 0.0
+  seed: 0
+
+embedding:
+  kind: hash
+  dim: 128
+  normalize: true
+  seed: 0
+
+compression:
+  text_codec: auto
+  vector_quant: int8
+  allocation: ham
+
+memory:
+  working_capacity: 6
+  retrieval_k: 5
+  token_budget: 256
+  chunk_max_chars: 300
+  consolidation_enabled: true
+  consolidation_radius: 0.25
+  retrieval: cosine
+
+dataset:
+  name: synthetic
+  num_examples: 12
+  num_sessions: 4
+  facts_per_session: 3
+  distractors_per_session: 2
+  seed: 0
+
+eval:
+  kind: string
+
+stats:
+  bootstrap_resamples: 2000
+  permutation_resamples: 2000
+  ci: 0.95
+  seed: 0
+
+finetune:
+  trainer: hf
+  optimizer: adamw
+  learning_rate: 1e-4               # Increased from 5e-5 for faster convergence
+  batch_size: 4
+  max_steps: 120                     # 12 facts reach ~1.0 well within this on cpu
+  checkpoint_every: 20
+  target_accuracy: null              # null => parity: peak accuracy the weights_only leg actually achieves, minus delta (always reachable by weights by construction)
+  parity_with: weights_only
+  noninferiority_delta: 0.03
