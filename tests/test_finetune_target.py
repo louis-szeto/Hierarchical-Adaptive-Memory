@@ -27,10 +27,10 @@ def _ckpt(step: int, w: float, h: float, n: int = 10):
     """Return TWO checkpoints (one per leg) at the same step."""
     return [
         CheckpointEval(
-            step=step, tokens_seen=step * 1000, wall_clock_s=step * 0.1, train_loss=None,
+            step=step, tokens_seen=step * 1000, train_loss=None,
             leg="weights_only", results=_rows(w, n, "weights_only")),
         CheckpointEval(
-            step=step, tokens_seen=step * 1000, wall_clock_s=step * 0.1, train_loss=None,
+            step=step, tokens_seen=step * 1000, train_loss=None,
             leg="ham_augmented", results=_rows(h, n, "ham_augmented")),
     ]
 

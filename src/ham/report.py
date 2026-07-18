@@ -76,8 +76,6 @@ _MAIN_COLUMNS = [
     ("logical_memory_bytes_mean", "LogicalBytes"),
     ("bytes_per_fact_mean", "Bytes/Fact"),
     ("compression_ratio_mean", "CompRatio"),
-    ("total_latency_s_mean", "Latency(s)"),
-    ("tokens_per_second_mean", "Tok/s"),
     ("index_size_bytes_mean", "IndexBytes"),
 ]
 
@@ -129,7 +127,6 @@ _BASELINE_COLUMNS = [
     ("prompt_tokens_mean", "PromptTok", True),
     ("physical_serialized_bytes_mean", "PhysBytes", True),
     ("compression_ratio_mean", "CompRatio", True),
-    ("total_latency_s_mean", "Latency(s)", True),
     ("peak_cpu_rss_bytes_mean", "PeakRSS", True),
 ]
 
@@ -173,7 +170,6 @@ _DELTA_COLS = [
     ("retrieval_mrr", "ΔMRR"),
     ("prompt_tokens", "ΔPromptTok"),
     ("physical_serialized_bytes", "ΔPhysBytes"),
-    ("total_latency_s", "ΔLatency"),
 ]
 
 
@@ -295,8 +291,6 @@ def _figures(out_dir, aggregate, smoke) -> list[str]:
     _bar("prompt_tokens_mean", "Prompt tokens", "fig_prompt_tokens.png", "Prompt tokens by condition")
     _bar("physical_serialized_bytes_mean", "Physical bytes", "fig_physical_bytes.png",
          "F3 — Physical serialized bytes by condition")
-    _bar("total_latency_s_mean", "Total latency (s)", "fig_latency.png",
-         "F2 — Total latency by condition")
 
     # Tier occupancy stacked bar.
     tw = [aggregate[c].get("tier_working_mean") or 0 for c in conds]

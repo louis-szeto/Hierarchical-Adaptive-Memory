@@ -66,6 +66,19 @@ def _fair_control_fingerprint(cfg: FinetuneExperimentConfig) -> dict:
     return shared
 
 
+def _drift_at_target(curve: list, target: float):
+    """RMS weight drift at the first checkpoint whose accuracy reaches ``target``.
+
+    The forgetting proxy of interest: the leg that reaches the target in fewer
+    optimizer steps has accumulated less weight movement at that point. Returns
+    the checkpoint's recorded ``drift_rms`` (None if the target is never reached
+    or drift was not recorded, e.g. the mock trainer)."""
+    for c in curve:
+        if c.accuracy() >= target:
+            return c.drift_rms
+    return None
+
+
 def _resolve_target(cfg: FinetuneExperimentConfig, leg_curves: dict) -> tuple[float, str]:
     ft = cfg.finetune
     if ft.target_accuracy is not None:
@@ -123,7 +136,8 @@ def run_finetune(cfg: FinetuneExperimentConfig, out_dir: str) -> dict:
             backend.model.load_state_dict(initial_state)
             trainer = HFLegTrainer(leg, backend, embedder, cfg, examples, corpus_facts)
         leg_curves[leg] = trainer.run()
-        # Evaluate zero-shot on the final weights (before the next leg resets).
+        # Zero-shot on the final weights (diagnostic only; the forgetting metric
+        # of record is per-checkpoint weight drift at the target, in the aggregate).
         if cfg.finetune.trainer == "hf":
             zeroshot["legs"][leg] = eval_zeroshot(backend)["accuracy"]
         # Free this leg's optimizer/activations before the next leg.
@@ -170,7 +184,7 @@ def run_finetune(cfg: FinetuneExperimentConfig, out_dir: str) -> dict:
                 for r in ckpt.results:
                     jf.write(json.dumps({
                         "step": ckpt.step, "tokens_seen": ckpt.tokens_seen,
-                        "wall_clock_s": ckpt.wall_clock_s, "train_loss": ckpt.train_loss,
+                        "train_loss": ckpt.train_loss, "drift_rms": ckpt.drift_rms,
                         "leg": leg, "example_id": r.example_id,
                         "question_type": r.question_type, "task_score": r.task_score,
                         "exact_match": r.exact_match, "correct": r.correct,
@@ -205,11 +219,12 @@ def run_finetune(cfg: FinetuneExperimentConfig, out_dir: str) -> dict:
 def _aggregate(cfg: FinetuneExperimentConfig, leg_curves: dict, target: float,
                target_kind: str) -> dict:
     weights_cost = cost_to_target(leg_curves[WEIGHTS_ONLY], WEIGHTS_ONLY, target)
+    weights_drift = _drift_at_target(leg_curves[WEIGHTS_ONLY], target)
     out: dict[str, dict] = {}
     for leg in FINETUNE_LEGS:
         cost = cost_to_target(leg_curves[leg], leg, target)
-        accs = [c.accuracy() for c in leg_curves[leg]]
         final_prompt = _mean_final_prompt(leg_curves[leg], leg)
+        drift_at_target = _drift_at_target(leg_curves[leg], target)
         entry = {
             "leg": leg, "n_examples": len(leg_curves[leg][0].results) if leg_curves[leg] else 0,
             "is_smoke": cfg.is_smoke, "target_accuracy": target, "target_kind": target_kind,
@@ -217,15 +232,15 @@ def _aggregate(cfg: FinetuneExperimentConfig, leg_curves: dict, target: float,
             "final_accuracy": cost["final_accuracy"], "max_accuracy": cost["max_accuracy"],
             "optimizer_steps_to_target": cost["optimizer_steps_to_target"],
             "training_tokens_to_target": cost["training_tokens_to_target"],
-            "wall_clock_to_target_s": cost["wall_clock_to_target_s"],
+            "drift_rms_at_target": drift_at_target,
             "final_prompt_tokens_mean": final_prompt,
-            "cost_ratio_tokens": None, "cost_ratio_steps": None,
-            "cost_ratio_wall_clock": None,
+            "cost_ratio_tokens": None, "cost_ratio_steps": None, "cost_ratio_drift": None,
         }
         if leg == HAM_AUGMENTED:
             entry["cost_ratio_tokens"] = cost_ratio(cost, weights_cost, "training_tokens_to_target")
             entry["cost_ratio_steps"] = cost_ratio(cost, weights_cost, "optimizer_steps_to_target")
-            entry["cost_ratio_wall_clock"] = cost_ratio(cost, weights_cost, "wall_clock_to_target_s")
+            if drift_at_target is not None and weights_drift:
+                entry["cost_ratio_drift"] = drift_at_target / weights_drift
         out[leg] = entry
     return out
 
@@ -242,7 +257,7 @@ def _overall_ratio(aggregate: dict) -> dict:
     return {
         "tokens": ham.get("cost_ratio_tokens"),
         "steps": ham.get("cost_ratio_steps"),
-        "wall_clock": ham.get("cost_ratio_wall_clock"),
+        "drift": ham.get("cost_ratio_drift"),
         "interpretation": ("ham_augmented reached the target at this fraction of "
                            "weights_only's cost (<1.0 = HAM cheaper)."),
     }
@@ -256,8 +271,8 @@ def _write_aggregate(out_dir: str, aggregate: dict) -> None:
     fieldnames = ["leg", "n_examples", "is_smoke", "reached", "target_accuracy",
                   "target_kind", "final_accuracy", "max_accuracy",
                   "optimizer_steps_to_target", "training_tokens_to_target",
-                  "wall_clock_to_target_s", "final_prompt_tokens_mean",
-                  "cost_ratio_tokens", "cost_ratio_steps", "cost_ratio_wall_clock"]
+                  "drift_rms_at_target", "final_prompt_tokens_mean",
+                  "cost_ratio_tokens", "cost_ratio_steps", "cost_ratio_drift"]
     with open(os.path.join(out_dir, "aggregate.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=fieldnames)
         w.writeheader()
@@ -290,8 +305,7 @@ def _compute_stats(cfg: FinetuneExperimentConfig, leg_curves: dict, target: floa
         for ckpt in leg_curves[leg]:
             correct = [r.correct for r in ckpt.results]
             ci = stats.mean_ci_bootstrap(correct, scfg.bootstrap_resamples, scfg.ci, scfg.seed)
-            rows.append({"step": ckpt.step, "tokens_seen": ckpt.tokens_seen,
-                         "wall_clock_s": ckpt.wall_clock_s, **ci})
+            rows.append({"step": ckpt.step, "tokens_seen": ckpt.tokens_seen, **ci})
         out["per_checkpoint_ci"][leg] = rows
 
     # Paired ham vs weights at (a) the weights target step and (b) the final step.

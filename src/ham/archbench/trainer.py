@@ -1,16 +1,15 @@
 """Real torch trainer for the stage-F memory-block experiment.
 
 Trains a :class:`ToyMemoryLM` from scratch on a corpus (recall or lm) under one
-memory-block condition, recording per-checkpoint quality, byte-honest memory
-size, and per-stream inference latency. The memory store accumulates across the
-whole run (FIFO at capacity, consolidated each checkpoint), so its size is a
-meaningful quantity to compare across conditions. Lazy-imports torch and fails
-loudly with install guidance if absent.
+memory-block condition, recording per-checkpoint quality and byte-honest memory
+size. The memory store accumulates across the whole run (FIFO at capacity,
+consolidated each checkpoint), so its size is a meaningful quantity to compare
+across conditions. Wall-clock/latency is intentionally not recorded (not a
+universal metric). Lazy-imports torch and fails loudly with install guidance if
+absent.
 """
 
 from __future__ import annotations
-
-import time
 
 from ..config import ArchBenchExperimentConfig
 from .memory import build_memory_store
@@ -70,28 +69,25 @@ class TorchArchTrainer:
         ckpt_set = set(checkpoint_steps(ab.max_steps, ab.checkpoint_every))
         curve: list[ArchCheckpoint] = []
 
-        def _eval(step, tokens, wall, loss):
+        def _eval(step, tokens, loss):
             model.eval()
-            t0 = time.perf_counter()
             with torch.no_grad():
                 logits = model(eval_ids, store, write=False).cpu().numpy()
-            latency = (time.perf_counter() - t0) / max(1, eval_ids.shape[0])
             quality = quality_metric(logits, eval_tg, eval_qm)
             mem_bytes = store.byte_size() if store is not None else 0
             model.train()
-            return ArchCheckpoint(step=step, tokens_seen=tokens, wall_clock_s=wall,
+            return ArchCheckpoint(step=step, tokens_seen=tokens,
                                   train_loss=loss, quality=quality,
-                                  memory_bytes=mem_bytes, inference_latency_s=latency,
+                                  memory_bytes=mem_bytes,
                                   redundancy=self.redundancy, condition=self.condition,
                                   regime="pretrain")
 
         model.train()
-        wall0 = time.perf_counter()
         tokens_seen = 0
         losses: list[float] = []
         idx = 0
         if 0 in ckpt_set:
-            curve.append(_eval(0, 0, 0.0, None))
+            curve.append(_eval(0, 0, None))
         for step in range(1, ab.max_steps + 1):
             batch_idx = [(idx + k) % n_train for k in range(ab.batch_size)]
             idx = (idx + ab.batch_size) % n_train
@@ -108,7 +104,6 @@ class TorchArchTrainer:
             if step in ckpt_set:
                 if store is not None:
                     store.consolidate()
-                wall = time.perf_counter() - wall0
                 avg_loss = (sum(losses) / len(losses)) if losses else None
-                curve.append(_eval(step, tokens_seen, wall, avg_loss))
+                curve.append(_eval(step, tokens_seen, avg_loss))
         return curve

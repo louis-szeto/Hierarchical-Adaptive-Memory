@@ -23,7 +23,7 @@ stage:
 backend:
   kind: hf
   model_id: HuggingFaceTB/SmolLM2-135M-Instruct
-  device: cpu                          # small model; CPU-safe (shared-GPU crash avoided)
+  device: cpu                          # CPU: shared display GPU crashed under load. CPU timing is noisier but safe.
   dtype: float32
   quantization: null
   max_new_tokens: 8
@@ -43,9 +43,10 @@ kvbench:
   keep_ratios: [0.25, 0.5, 0.75]
   cluster_radius: 0.25
   kv_bits: 4
-  n_contexts: 16
-  context_len: 512
-  n_distinct_spans: 32
+  n_contexts: 8
+  context_len: 1024                   # long enough that attention over the prefix is a non-trivial part of per-token decode cost; 1024 keeps CPU prefill tractable
+  n_distinct_spans: 128
   span_len: 8
+  decode_len: 16                      # autoregressive tokens timed per-token for decode latency
   target_quality: 0.9
   device: cpu

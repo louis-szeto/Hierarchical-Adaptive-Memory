@@ -52,10 +52,10 @@ class CheckpointEval:
 
     step: int
     tokens_seen: int
-    wall_clock_s: float
     train_loss: float | None
     leg: str  # "weights_only" or "ham_augmented"
     results: list[ExampleResult] = field(default_factory=list)
+    drift_rms: float | None = None  # RMS weight drift from the baseline (forgetting proxy)
 
     def accuracy(self) -> float:
         if not self.results:

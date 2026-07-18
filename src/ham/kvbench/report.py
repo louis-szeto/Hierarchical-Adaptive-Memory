@@ -1,5 +1,5 @@
 """Paper-ready artifacts for the stage-D KV experiment, from *actual* run outputs
-only. Headline = HAM/full bytes- & latency-ratios vs redundancy (the slope proves
+only. Headline = HAM/full bytes-ratio and quality vs redundancy (the slope proves
 'frequency'). Mock output watermarked ``SMOKE TEST``; empty dirs -> EMPTY TEMPLATE."""
 
 from __future__ import annotations
@@ -48,8 +48,8 @@ def _poc_banner(manifest):
 def _write_redundancy_table(out_dir, aggregate, smoke) -> str:
     path = os.path.join(out_dir, "table_redundancy.md")
     lines = ["# Table KV1 — KV-cache cost vs full, by redundancy & strength", "",
-             "Ratios are condition / full_kv at the same redundancy. bytes/latency < 1.0 = "
-             "smaller/faster; quality_delta ~ 0 = iso-quality. HAM's advantage should GROW with "
+             "Ratios are condition / full_kv at the same redundancy. bytes < 1.0 = "
+             "smaller; quality_delta ~ 0 = iso-quality. HAM's advantage should GROW with "
              "redundancy (the proof frequency is the mechanism).", ""]
     if smoke:
         lines += [f"> **{WATERMARK}**", ""]
@@ -57,11 +57,11 @@ def _write_redundancy_table(out_dir, aggregate, smoke) -> str:
         lines += ["_EMPTY TEMPLATE — no run data found. Run a kvbench experiment first._", ""]
         _write(path, "\n".join(lines))
         return path
-    lines += ["| redundancy | condition | keep_ratio | bytes_ratio | latency_ratio | quality_delta |",
-              "|---|---|---|---|---|---|"]
+    lines += ["| redundancy | condition | keep_ratio | bytes_ratio | quality_delta |",
+              "|---|---|---|---|---|"]
     for e in sorted(aggregate.values(), key=lambda x: (x["redundancy"], x["condition"], -(x["keep_ratio"]))):
         lines.append(f"| {e['redundancy']} | {e['condition']} | {e['keep_ratio']} | "
-                     f"{_fmt(e['bytes_ratio_vs_full'])} | {_fmt(e['latency_ratio_vs_full'])} | "
+                     f"{_fmt(e['bytes_ratio_vs_full'])} | "
                      f"{_fmt(e['quality_delta_vs_full'])} |")
     lines.append("")
     _write(path, "\n".join(lines))
@@ -77,12 +77,11 @@ def _write_quality_bytes_table(out_dir, aggregate, smoke) -> str:
         lines += ["_EMPTY TEMPLATE — no run data found._", ""]
         _write(path, "\n".join(lines))
         return path
-    lines += ["| redundancy | condition | keep_ratio | agreement | kv_bytes | latency(s) |",
-              "|---|---|---|---|---|---|"]
+    lines += ["| redundancy | condition | keep_ratio | agreement | kv_bytes |",
+              "|---|---|---|---|---|"]
     for e in sorted(aggregate.values(), key=lambda x: (x["redundancy"], x["condition"], -(x["keep_ratio"]))):
         lines.append(f"| {e['redundancy']} | {e['condition']} | {e['keep_ratio']} | "
-                     f"{_fmt(e['quality_agreement_mean'])} | {int(e['kv_bytes_mean'])} | "
-                     f"{_fmt(e['decode_latency_s_mean'])} |")
+                     f"{_fmt(e['quality_agreement_mean'])} | {int(e['kv_bytes_mean'])} |")
     lines.append("")
     _write(path, "\n".join(lines))
     return path

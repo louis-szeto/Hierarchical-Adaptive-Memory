@@ -1,7 +1,7 @@
 """Paper-ready artifacts for the stage-F archbench experiment, from *actual* run
 outputs only.
 
-Headline table = HAM/standard bytes- and latency-ratios vs redundancy (the slope
+Headline table = HAM/standard bytes-ratios vs redundancy (the slope
 proves 'frequency' is the mechanism). Mock-trainer output is watermarked
 ``SMOKE TEST``; empty run dirs yield EMPTY TEMPLATE tables and no figures.
 """
@@ -63,13 +63,13 @@ def _poc_banner(manifest):
 
 
 def _write_redundancy_table(out_dir, aggregate, smoke) -> str:
-    """Headline: bytes/latency/quality ratios of each condition vs standard, per
-    redundancy level. The bytes & latency ratios should DROP toward 0 for HAM as
-    redundancy rises -- that slope is the proof."""
+    """Headline: bytes/quality ratios of each condition vs standard, per
+    redundancy level. The bytes ratio should DROP toward 0 for HAM as redundancy
+    rises -- that slope is the proof."""
     path = os.path.join(out_dir, "table_redundancy.md")
     lines = ["# Table AB1 — Memory-block cost vs standard, by redundancy", "",
              "Ratios are condition / standard_memory at the same task & redundancy. "
-             "bytes/latency ratio < 1.0 = cheaper than standard; quality_delta >~ 0 = iso-quality.",
+             "bytes ratio < 1.0 = smaller than standard; quality_delta >~ 0 = iso-quality.",
              "HAM's advantage should GROW with redundancy (the proof that frequency is the mechanism).", ""]
     if smoke:
         lines += [f"> **{WATERMARK}**", ""]
@@ -77,15 +77,15 @@ def _write_redundancy_table(out_dir, aggregate, smoke) -> str:
         lines += ["_EMPTY TEMPLATE — no run data found. Run an archbench experiment first._", ""]
         _write(path, "\n".join(lines))
         return path
-    header = "| task | redundancy | condition | bytes_ratio | latency_ratio | quality_delta |"
-    sep = "|---|---|---|---|---|---|"
+    header = "| task | redundancy | condition | bytes_ratio | quality_delta |"
+    sep = "|---|---|---|---|---|"
     lines += [header, sep]
     rows = sorted(aggregate.values(),
                   key=lambda e: (e["task"], e["redundancy"], e["condition"]))
     for e in rows:
         lines.append(
             f"| {e['task']} | {e['redundancy']} | {e['condition']} | "
-            f"{_fmt(e['bytes_ratio_vs_standard'])} | {_fmt(e['latency_ratio_vs_standard'])} | "
+            f"{_fmt(e['bytes_ratio_vs_standard'])} | "
             f"{_fmt(e['quality_delta_vs_standard'])} |")
     lines.append("")
     _write(path, "\n".join(lines))
@@ -101,13 +101,12 @@ def _write_quality_bytes_table(out_dir, aggregate, smoke) -> str:
         lines += ["_EMPTY TEMPLATE — no run data found._", ""]
         _write(path, "\n".join(lines))
         return path
-    header = "| task | redundancy | condition | quality_final | memory_bytes_peak | latency_final(s) |"
-    sep = "|---|---|---|---|---|---|"
+    header = "| task | redundancy | condition | quality_final | memory_bytes_peak |"
+    sep = "|---|---|---|---|---|"
     lines += [header, sep]
     for e in sorted(aggregate.values(), key=lambda e: (e["task"], e["redundancy"], e["condition"])):
         lines.append(f"| {e['task']} | {e['redundancy']} | {e['condition']} | "
-                     f"{_fmt(e['quality_final'])} | {e['memory_bytes_peak']} | "
-                     f"{_fmt(e['latency_final_s'])} |")
+                     f"{_fmt(e['quality_final'])} | {e['memory_bytes_peak']} |")
     lines.append("")
     _write(path, "\n".join(lines))
     return path
@@ -131,13 +130,12 @@ def _figures(out_dir, aggregate, smoke) -> list[str]:
             ax.text(0.5, 0.5, "SMOKE TEST", transform=ax.transAxes, fontsize=30, color="red",
                     alpha=0.20, ha="center", va="center", rotation=30, fontweight="bold")
 
-    # AB-F1: bytes_ratio & latency_ratio vs redundancy, per condition (the headline).
-    by_cond: dict[str, list[tuple[float, float, float]]] = defaultdict(list)
+    # AB-F1: bytes_ratio vs redundancy, per condition (the headline).
+    by_cond: dict[str, list[tuple[float, float]]] = defaultdict(list)
     for e in aggregate.values():
         if e["bytes_ratio_vs_standard"] is not None:
             by_cond[e["condition"]].append(
-                (e["redundancy"], e["bytes_ratio_vs_standard"],
-                 e["latency_ratio_vs_standard"]))
+                (e["redundancy"], e["bytes_ratio_vs_standard"]))
     if by_cond:
         fig, ax = plt.subplots(figsize=(7, 4.5))
         for cond, pts in by_cond.items():

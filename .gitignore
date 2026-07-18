@@ -29,3 +29,6 @@ data/**
 # CodeCarbon
 emissions.csv
 .codecarbon/
+
+# Local run logs (transient)
+logs/

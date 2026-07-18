@@ -30,11 +30,9 @@ class ArchCheckpoint:
 
     step: int
     tokens_seen: int
-    wall_clock_s: float
     train_loss: float | None
     quality: float            # recall accuracy or next-token accuracy in [0, 1]
     memory_bytes: int         # byte-honest peak memory-block size during the eval stream
-    inference_latency_s: float  # mean per-eval-stream forward time (memory read+fuse+base)
     redundancy: float         # corpus redundancy level (0 = uniform/low, ->1 = high)
     condition: str
     regime: str

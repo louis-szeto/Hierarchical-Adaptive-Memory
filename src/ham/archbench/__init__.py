@@ -3,7 +3,7 @@
 Identical toy language models are trained under different memory-block policies
 (standard FlatMemory vs HAM-compressed). The memory policy is the SOLE
 independent variable; corpus redundancy is the lever that isolates 'frequency'.
-Headline: HAM/standard bytes- and latency-ratios vs redundancy (the slope is the
+Headline: HAM/standard bytes-ratio vs redundancy (the slope is the
 proof). See ``docs/ARCHBENCH_PROTOCOL.md``.
 """
 

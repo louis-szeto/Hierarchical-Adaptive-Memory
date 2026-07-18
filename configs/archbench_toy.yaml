@@ -2,7 +2,7 @@
 #
 # Trains identical toy LMs differing ONLY in their memory-block policy (standard
 # FlatMemory vs HAM-compressed), across the redundancy lever. Headline: HAM/standard
-# bytes- & latency-ratios vs redundancy (the slope proves 'frequency' is the
+# bytes-ratio vs redundancy (the slope proves .frequency. is the
 # mechanism). Labeled REAL MODEL, PROOF OF CONCEPT (toy architecture, not a claim
 # about production transformers).
 #

@@ -66,7 +66,6 @@ class MockLegTrainer:
         curve: list[CheckpointEval] = []
         for step in steps:
             tokens = step * ft.tokens_per_step
-            wall = step * ft.mock_seconds_per_step
             train_loss = max(0.05, 2.0 * math.exp(-1.0e-4 * tokens))
 
             if step == 0:
@@ -90,6 +89,6 @@ class MockLegTrainer:
                     retrieval_recall_at_k=(1.0 if (self.leg == "ham_augmented" and ok) else
                                           (None if self.leg == "weights_only" else 0.0))))
             curve.append(CheckpointEval(
-                step=step, tokens_seen=tokens, wall_clock_s=wall,
+                step=step, tokens_seen=tokens,
                 train_loss=train_loss, leg=self.leg, results=rows))
         return curve

@@ -44,10 +44,10 @@ stage:
 backend:
   kind: hf
   model_id: HuggingFaceTB/SmolLM2-135M-Instruct
-  device: cpu                       # CPU: 135M is CPU-feasible AND avoids exhausting a shared display GPU (a per-leg model-reload bug previously filled VRAM and hard-crashed the GPU). That leak is fixed (one model, reset between legs) so cuda works on a dedicated GPU, but cpu is the safe default.
+  device: cpu                       # CPU: the shared display GPU OOM'd/crashed under the eval loop; CPU is slower but safe and deterministic.
   dtype: float32
   quantization: null
-  max_new_tokens: 16
+  max_new_tokens: 4                 # answers are short; kept small to bound per-checkpoint eval cost on CPU
   temperature: 0.0
   seed: 0
 
@@ -73,9 +73,9 @@ memory:
 
 dataset:
   name: synthetic
-  num_examples: 12
-  num_sessions: 4
-  facts_per_session: 3
+  num_examples: 20                  # ~20 distinct facts: enough that memorization is gradual across checkpoints (the cost-to-target gap only appears when memorization is non-trivial), few enough that a 135M model reaches a high ceiling within 100 steps
+  num_sessions: 5
+  facts_per_session: 4
   distractors_per_session: 2
   seed: 0
 
@@ -91,10 +91,10 @@ stats:
 finetune:
   trainer: hf
   optimizer: adamw
-  learning_rate: 1e-4               # Increased from 5e-5 for faster convergence
-  batch_size: 4
-  max_steps: 120                     # 12 facts reach ~1.0 well within this on cpu
-  checkpoint_every: 20
+  learning_rate: 1e-4               # the LR at which an 8-fact corpus saturated in ~20 steps; with 20 facts memorization is gradual over many checkpoints
+  batch_size: 8
+  max_steps: 100                    # 20 facts need room to memorize; fine checkpoints resolve the cost-to-target gap
+  checkpoint_every: 5               # fine resolution so the step at which each arm first hits the target is locatable
   target_accuracy: null              # null => parity: peak accuracy the weights_only leg actually achieves, minus delta (always reachable by weights by construction)
   parity_with: weights_only
   noninferiority_delta: 0.03

@@ -9,8 +9,8 @@ The synthetic model bakes in the thesis so the plumbing is meaningfully
 non-degenerate:
 - quality climbs to a per-condition ceiling (no_memory < memory conditions);
   standard/ham are iso-quality at a given redundancy.
-- memory bytes / latency: HAM conditions compress relative to ``standard_memory``
-  by a factor that GROWS with redundancy ``r`` (0 = no compression, ->1 = max).
+- memory bytes: HAM conditions compress relative to ``standard_memory`` by a
+  factor that GROWS with redundancy ``r`` (0 = no compression, ->1 = max).
   ``ham_no_consolidation`` does not compress (= standard); ``ham_uniform`` lacks
   int4 so compresses less than ``ham_memory``; ``ham_random_alloc`` clusters weakly.
 """
@@ -41,18 +41,6 @@ def _bytes_factor(condition: str, r: float) -> float:
     return 1.0
 
 
-def _items_factor(condition: str, r: float) -> float:
-    """ham_items / standard_items (drives latency). Consolidation reduces item
-    count independent of precision."""
-    if condition in ("no_memory", "standard_memory", "ham_no_consolidation"):
-        return 1.0
-    if condition in ("ham_memory", "ham_uniform"):
-        return 1.0 - 0.5 * r
-    if condition == "ham_random_alloc":
-        return 1.0 - 0.15 * r
-    return 1.0
-
-
 class MockArchTrainer:
     """No-torch synthetic trainer for one (condition x redundancy) cell."""
 
@@ -67,23 +55,17 @@ class MockArchTrainer:
         steps = checkpoint_steps(ab.max_steps, ab.checkpoint_every)
         ceiling = _CEILING.get(self.condition, 0.9)
         cb = _bytes_factor(self.condition, self.r)
-        ci = _items_factor(self.condition, self.r)
         rate = 3.0 / max(1, ab.max_steps)
         curve: list[ArchCheckpoint] = []
         for s in steps:
             tokens = s * ab.batch_size * ab.seq_len
-            wall = s * 0.05
             loss = max(0.05, 3.0 * math.exp(-rate * s * 1.5)) if s else None
             quality = ceiling * (1.0 - math.exp(-rate * s))
             std_items = min(ab.capacity, s)
             std_bytes = std_items * ab.dim * 4
-            if self.condition == "no_memory":
-                mem_bytes, latency = 0, 1.0e-4
-            else:
-                mem_bytes = int(std_bytes * cb)
-                latency = (std_items * ci) * 1.0e-4 + 1.0e-4
+            mem_bytes = 0 if self.condition == "no_memory" else int(std_bytes * cb)
             curve.append(ArchCheckpoint(
-                step=s, tokens_seen=tokens, wall_clock_s=wall, train_loss=loss,
-                quality=quality, memory_bytes=mem_bytes, inference_latency_s=latency,
+                step=s, tokens_seen=tokens, train_loss=loss,
+                quality=quality, memory_bytes=mem_bytes,
                 redundancy=self.r, condition=self.condition, regime="pretrain"))
         return curve

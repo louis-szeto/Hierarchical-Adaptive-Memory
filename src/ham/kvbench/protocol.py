@@ -32,6 +32,5 @@ class KVResult:
     context_id: int
     kv_bytes: int                 # byte-honest compressed KV-cache size
     n_positions: int              # retained positions (after clustering/eviction)
-    decode_latency_s: float       # per-token continuation forward time with this cache
     quality_agreement: float      # next-token top-1 agreement vs full_kv (in [0,1])
     quality_accuracy: float       # next-token accuracy vs ground truth (in [0,1])

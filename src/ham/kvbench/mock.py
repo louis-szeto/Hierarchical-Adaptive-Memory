@@ -55,7 +55,6 @@ class MockKVTrainer:
     def run(self) -> list[KVResult]:
         kb = self.kb
         full_bytes = int(kb.mock_full_bytes_per_position * kb.context_len)
-        full_lat = 1.0e-3 * kb.context_len
         results: list[KVResult] = []
         for r in kb.redundancy_levels:
             for ci in range(min(kb.n_contexts, 4)):
@@ -68,7 +67,6 @@ class MockKVTrainer:
                             condition=cond, redundancy=r, keep_ratio=kr, context_id=ci,
                             kv_bytes=int(full_bytes * bf),
                             n_positions=max(1, int(kb.context_len * nf)),
-                            decode_latency_s=full_lat * nf,
                             quality_agreement=_agreement(cond, r, kr),
                             quality_accuracy=_accuracy(cond, r, kr)))
         return results

@@ -1,10 +1,10 @@
 """Stage-F architecture memory-block experiment runner.
 
 For each task (recall/lm) x redundancy level x memory condition, train an
-identical toy LM (only the memory policy differs) and record a curve of quality,
-byte-honest memory size, and inference latency. The headline evidence is the
-HAM/standard bytes- and latency-ratios versus redundancy (the slope proves
-'frequency' is the mechanism). See ``docs/ARCHBENCH_PROTOCOL.md``.
+identical toy LM (only the memory policy differs) and record a curve of quality
+and byte-honest memory size. The headline evidence is the HAM/standard
+bytes-ratio versus redundancy (the slope proves 'frequency' is the mechanism).
+See ``docs/ARCHBENCH_PROTOCOL.md``.
 """
 
 from __future__ import annotations
@@ -61,11 +61,10 @@ def _cost_to_target(curve: list[ArchCheckpoint], target: float) -> dict:
         if ckpt.quality >= target:
             return {"reached": True, "step": ckpt.step,
                     "tokens_to_target": ckpt.tokens_seen,
-                    "wall_to_target_s": ckpt.wall_clock_s,
                     "quality_at_target": ckpt.quality}
     last = curve[-1] if curve else None
     return {"reached": False, "step": None, "tokens_to_target": None,
-            "wall_to_target_s": None, "quality_at_target": last.quality if last else None}
+            "quality_at_target": last.quality if last else None}
 
 
 def run_archbench(cfg: ArchBenchExperimentConfig, out_dir: str) -> dict:
@@ -107,9 +106,8 @@ def run_archbench(cfg: ArchBenchExperimentConfig, out_dir: str) -> dict:
         for c in all_curves:
             jf.write(json.dumps({
                 "task": c.regime, "step": c.step, "tokens_seen": c.tokens_seen,
-                "wall_clock_s": c.wall_clock_s, "train_loss": c.train_loss,
+                "train_loss": c.train_loss,
                 "quality": c.quality, "memory_bytes": c.memory_bytes,
-                "inference_latency_s": c.inference_latency_s,
                 "redundancy": c.redundancy, "condition": c.condition}) + "\n")
 
     aggregate = _aggregate(all_curves, cfg)
@@ -150,12 +148,9 @@ def _aggregate(curves: list[ArchCheckpoint], cfg) -> dict:
             "quality_max": max(c.quality for c in ckpts),
             "memory_bytes_final": final.memory_bytes,
             "memory_bytes_peak": peak_bytes,
-            "latency_final_s": final.inference_latency_s,
             "reached_target": cost["reached"],
             "tokens_to_target": cost["tokens_to_target"],
-            "wall_to_target_s": cost["wall_to_target_s"],
             "bytes_ratio_vs_standard": None,
-            "latency_ratio_vs_standard": None,
             "quality_delta_vs_standard": None,
         }
         out[f"{task}|r={r}|{cond}"] = entry
@@ -164,9 +159,6 @@ def _aggregate(curves: list[ArchCheckpoint], cfg) -> dict:
         std = out.get(f"{entry['task']}|r={entry['redundancy']}|{WEIGHTS}")
         if std and std["memory_bytes_peak"]:
             entry["bytes_ratio_vs_standard"] = entry["memory_bytes_peak"] / std["memory_bytes_peak"]
-            entry["latency_ratio_vs_standard"] = (
-                entry["latency_final_s"] / std["latency_final_s"]
-                if std["latency_final_s"] else None)
             entry["quality_delta_vs_standard"] = entry["quality_final"] - std["quality_final"]
     return out
 
@@ -177,9 +169,9 @@ def _write_aggregate(out_dir: str, aggregate: dict) -> None:
     if not aggregate:
         return
     cols = ["task", "redundancy", "condition", "quality_final", "quality_max",
-            "memory_bytes_peak", "latency_final_s", "reached_target",
+            "memory_bytes_peak", "reached_target",
             "tokens_to_target", "bytes_ratio_vs_standard",
-            "latency_ratio_vs_standard", "quality_delta_vs_standard"]
+            "quality_delta_vs_standard"]
     with open(os.path.join(out_dir, "aggregate.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=cols)
         w.writeheader()
@@ -208,7 +200,5 @@ def _compute_stats(curves: list[ArchCheckpoint], cfg) -> dict:
                 "ham_quality_final": ham[-1].quality,
                 "standard_bytes_peak": max(c.memory_bytes for c in std),
                 "ham_bytes_peak": max(c.memory_bytes for c in ham),
-                "standard_latency_final": std[-1].inference_latency_s,
-                "ham_latency_final": ham[-1].inference_latency_s,
             })
     return out

@@ -1,9 +1,10 @@
 """Stage-D KV-cache-compression experiment runner.
 
 For each redundancy level x condition, compress a frozen model's KV cache and
-record byte-honest size, decode latency, and next-token quality. The headline
-evidence is the HAM/full bytes- and latency-ratios versus redundancy (the slope
-proves 'frequency' is the mechanism). See ``docs/KVBENCH_PROTOCOL.md``.
+record byte-honest size and next-token quality. The headline evidence is the
+HAM/full bytes-ratio and quality versus redundancy (the slope proves 'frequency'
+is the mechanism). Wall-clock latency is not reported (not universal). See
+``docs/KVBENCH_PROTOCOL.md``.
 """
 
 from __future__ import annotations
@@ -64,7 +65,6 @@ def run_kvbench(cfg: KVBenchExperimentConfig, out_dir: str) -> dict:
                 "condition": r.condition, "redundancy": r.redundancy,
                 "keep_ratio": r.keep_ratio, "context_id": r.context_id,
                 "kv_bytes": r.kv_bytes, "n_positions": r.n_positions,
-                "decode_latency_s": r.decode_latency_s,
                 "quality_agreement": r.quality_agreement,
                 "quality_accuracy": r.quality_accuracy}) + "\n")
 
@@ -92,20 +92,16 @@ def _aggregate(results: list[KVResult], cfg) -> dict:
             "redundancy": r, "condition": cond, "keep_ratio": kr, "n": len(rows),
             "is_smoke": cfg.is_smoke,
             "kv_bytes_mean": float(np.mean([x.kv_bytes for x in rows])),
-            "decode_latency_s_mean": float(np.mean([x.decode_latency_s for x in rows])),
             "quality_agreement_mean": float(np.mean([x.quality_agreement for x in rows])),
             "quality_accuracy_mean": float(np.mean([x.quality_accuracy for x in rows])),
             "n_positions_mean": float(np.mean([x.n_positions for x in rows])),
-            "bytes_ratio_vs_full": None, "latency_ratio_vs_full": None,
+            "bytes_ratio_vs_full": None,
             "quality_delta_vs_full": None,
         }
     for entry in out.values():
         full = out.get(f"r={entry['redundancy']}|{BASELINE}|kr=1.0")
         if full and full["kv_bytes_mean"]:
             entry["bytes_ratio_vs_full"] = entry["kv_bytes_mean"] / full["kv_bytes_mean"]
-            entry["latency_ratio_vs_full"] = (
-                entry["decode_latency_s_mean"] / full["decode_latency_s_mean"]
-                if full["decode_latency_s_mean"] else None)
             entry["quality_delta_vs_full"] = entry["quality_agreement_mean"] - full["quality_agreement_mean"]
     return out
 
@@ -116,7 +112,7 @@ def _write_aggregate(out_dir: str, aggregate: dict) -> None:
     if not aggregate:
         return
     cols = ["redundancy", "condition", "keep_ratio", "kv_bytes_mean",
-            "bytes_ratio_vs_full", "decode_latency_s_mean", "latency_ratio_vs_full",
+            "bytes_ratio_vs_full",
             "quality_agreement_mean", "quality_delta_vs_full", "quality_accuracy_mean"]
     with open(os.path.join(out_dir, "aggregate.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=cols)

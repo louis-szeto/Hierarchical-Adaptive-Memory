@@ -1,15 +1,14 @@
 """Real torch trainer for the stage-D KV-cache-compression experiment.
 
 For each redundancy level x context: prefill the context once (full KV), then for
-each compression condition compress that KV, rebuild the cache, and run a short
-continuation forward to measure byte-honest KV size, decode latency, and
-next-token quality (agreement vs full_kv + accuracy vs ground truth). Lazy-imports
-torch and fails loudly if absent.
+each compression condition compress that KV, rebuild the cache, and autoregressively
+decode a fixed number of continuation tokens to measure byte-honest KV size and
+next-token quality (agreement vs full_kv + accuracy vs ground truth). Wall-clock
+latency is intentionally NOT reported (hardware-dependent, not universal).
+Lazy-imports torch and fails loudly if absent.
 """
 
 from __future__ import annotations
-
-import time
 
 from ..backends import build_backend
 from ..config import KVBenchExperimentConfig
@@ -49,7 +48,7 @@ class TorchKVTrainer:
         model = backend.model.to(self.device).eval()
         vocab = backend.tokenizer.vocab_size
         results: list[KVResult] = []
-        cont_len = max(4, self.kb.span_len)
+        cont_len = max(4, self.kb.decode_len)
 
         for r in self.kb.redundancy_levels:
             inputs, targets = make_contexts(
@@ -60,9 +59,11 @@ class TorchKVTrainer:
                 ctx_ids = torch.from_numpy(ctx).unsqueeze(0).to(self.device)
                 tgt_ids = torch.from_numpy(tgt).unsqueeze(0).to(self.device)
                 gt_next = tgt_ids[0, 1:]
-                # Prefill once -> full legacy KV.
+                # Prefill once -> full legacy KV (the cache every condition compresses).
                 legacy_full = extract_legacy_cache(model, ctx_ids)
-                # Reference predictions with the full cache.
+                # Reference predictions with the full cache (teacher-forced over the
+                # continuation -- next-token argmax at each position, no autoregressive
+                # error accumulation).
                 full_cache = rebuild_cache([(K, V) for K, V in legacy_full])
                 with torch.no_grad():
                     logits_full = model(tgt_ids, past_key_values=full_cache,
@@ -78,17 +79,14 @@ class TorchKVTrainer:
                         comp, kv_bytes, n_pos = compress_cache(
                             legacy_full, cond, self.kb, self.cfg.seed, kr)
                         cache = rebuild_cache(comp)
-                        t0 = time.perf_counter()
                         with torch.no_grad():
                             logits = model(tgt_ids, past_key_values=cache,
                                            use_cache=False).logits
-                        latency = (time.perf_counter() - t0) / max(1, tgt_ids.shape[1])
                         preds = logits[0, :-1].argmax(dim=-1)
                         agreement = float((preds == preds_full).float().mean().item())
                         accuracy = float((preds == gt_next).float().mean().item())
                         results.append(KVResult(
                             condition=cond, redundancy=r, keep_ratio=kr, context_id=ci,
                             kv_bytes=int(kv_bytes), n_positions=int(n_pos),
-                            decode_latency_s=latency, quality_agreement=agreement,
-                            quality_accuracy=accuracy))
+                            quality_agreement=agreement, quality_accuracy=accuracy))
         return results

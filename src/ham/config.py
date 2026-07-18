@@ -562,6 +562,7 @@ class KVBenchConfig:
     context_len: int = 256
     n_distinct_spans: int = 32
     span_len: int = 8
+    decode_len: int = 16              # autoregressive-decode tokens timed for latency
     # iso-quality target (for the cost/quality Pareto)
     target_quality: float = 0.9
     device: str = "cpu"              # "cpu" | "cuda" | "auto"

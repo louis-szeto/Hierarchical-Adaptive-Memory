@@ -71,7 +71,7 @@ _COST_COLUMNS = [
     ("reached", "Reached"),
     ("optimizer_steps_to_target", "StepsToTarget"),
     ("training_tokens_to_target", "TokensToTarget"),
-    ("wall_clock_to_target_s", "WallToTarget(s)"),
+    ("drift_rms_at_target", "DriftAtTarget"),
     ("cost_ratio_tokens", "RatioTokens"),
 ]
 
@@ -79,7 +79,7 @@ _COST_COLUMNS = [
 def _write_cost_table(out_dir, aggregate, target, smoke) -> str:
     path = os.path.join(out_dir, "table_cost.md")
     lines = ["# Table FT1 — Cost-to-target by leg", "",
-             "Training tokens / wall-clock / optimizer-steps to reach the target "
+             "Training tokens / optimizer-steps / RMS weight drift at the target "
              "knowledge accuracy. RatioTokens = ham_augmented / weights_only "
              "(<1.0 means HAM reached the target cheaper).", "",
              "NEW DESIGN: Two legs trained independently from identical baseline: "
@@ -115,22 +115,22 @@ def _write_curve_table(out_dir, curve_rows, smoke) -> str:
     lines = ["# Table FT2 — Accuracy curve (per checkpoint x leg)", ""]
     if smoke:
         lines += [f"> **{WATERMARK}**", ""]
-    header = "| Step | TokensSeen | WallClock(s) | Arm | Accuracy | PromptTok |"
-    sep = "|---|---|---|---|---|---|"
+    header = "| Step | TokensSeen | Arm | Accuracy | PromptTok |"
+    sep = "|---|---|---|---|---|"
     if not curve_rows:
         lines += ["_EMPTY TEMPLATE — no run data found._", "", header, sep,
-                  "| _(no data)_ | n.a. | n.a. | n.a. | n.a. | n.a. |"]
+                  "| _(no data)_ | n.a. | n.a. | n.a. | n.a. |"]
         _write(path, "\n".join(lines))
         return path
     lines += [header, sep]
     # Aggregate curve.jsonl rows to (step, leg) mean accuracy.
     bucket: dict[tuple, list] = defaultdict(list)
     for r in curve_rows:
-        bucket[(r["step"], r["tokens_seen"], r["wall_clock_s"], r["leg"])].append(r)
-    for (step, tokens, wall, leg), rows in sorted(bucket.items(), key=lambda kv: (kv[0][0], kv[0][3])):
+        bucket[(r["step"], r["tokens_seen"], r["leg"])].append(r)
+    for (step, tokens, leg), rows in sorted(bucket.items(), key=lambda kv: (kv[0][0], kv[0][2])):
         acc = sum(r["correct"] for r in rows) / len(rows)
         ptok = sum(r["prompt_tokens"] for r in rows) / len(rows)
-        lines.append(f"| {step} | {tokens} | {_fmt(wall)} | {leg} | {_fmt(acc)} | {_fmt(ptok)} |")
+        lines.append(f"| {step} | {tokens} | {leg} | {_fmt(acc)} | {_fmt(ptok)} |")
     lines.append("")
     _write(path, "\n".join(lines))
     return path

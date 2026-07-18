@@ -11,8 +11,6 @@ training examples. Each leg has its own optimizer and trains from the same basel
 
 from __future__ import annotations
 
-import time
-
 from ..backends.hf import HFBackend
 from ..config import FinetuneExperimentConfig
 from ..datasets.base import Example
@@ -75,6 +73,12 @@ class HFLegTrainer:
         self.cfg = cfg
         self.examples = examples
         self.corpus_facts = corpus_facts
+        # Snapshot the baseline (pre-fine-tune) weights -- the runner has just
+        # reset the model to the shared baseline, so this is identical across
+        # legs. Used to measure per-checkpoint RMS weight drift (a deterministic,
+        # hardware-independent forgetting proxy).
+        self._baseline = {k: v.detach().cpu().clone()
+                          for k, v in backend.model.state_dict().items()}
 
     def run(self) -> list[CheckpointEval]:
         torch = self.backend._torch
@@ -125,26 +129,39 @@ class HFLegTrainer:
         ckpt_set = set(ckpt_steps)
         curve: list[CheckpointEval] = []
 
-        def _eval(step: int, tokens: int, wall: float, loss,
+        def _drift_rms() -> float:
+            """RMS weight drift of the current weights from the baseline snapshot."""
+            cur = model.state_dict()
+            sq = 0.0
+            n = 0
+            for k, bp in self._baseline.items():
+                if k in cur:
+                    d = cur[k].detach().float() - bp.detach().float()
+                    sq += float((d * d).sum().item())
+                    n += int(d.numel())
+            return (sq / n) ** 0.5 if n else 0.0
+
+        def _eval(step: int, tokens: int, loss,
                   force_no_context: bool = False) -> CheckpointEval:
             model.eval()
             results = eval_mod.eval_leg(
                 self.backend, self.cfg, self.leg, self.embedder,
                 self.corpus_facts, self.examples,
                 force_no_context=force_no_context)
+            drift = _drift_rms()
             model.train()
-            return CheckpointEval(step=step, tokens_seen=tokens, wall_clock_s=wall,
-                                  train_loss=loss, leg=self.leg, results=results)
+            return CheckpointEval(step=step, tokens_seen=tokens,
+                                  train_loss=loss, leg=self.leg, results=results,
+                                  drift_rms=drift)
 
         model.train()
-        wall0 = time.perf_counter()
         tokens_seen = 0
         losses: list[float] = []
         idx = 0
         if 0 in ckpt_set:
             # Step 0 = brand-new model: evaluate BOTH legs no-context so they
             # share an identical 0-accuracy baseline (no retrieval echo inflation).
-            curve.append(_eval(0, 0, 0.0, None, force_no_context=True))
+            curve.append(_eval(0, 0, None, force_no_context=True))
         for step in range(1, ft.max_steps + 1):
             batch_idx = [(idx + k) % n for k in range(ft.batch_size)]
             idx = (idx + ft.batch_size) % n
@@ -160,12 +177,10 @@ class HFLegTrainer:
             # the loss is computed on), NOT the full input sequence. Both legs
             # fine-tune on the identical Q->A data, so this is equal across legs
             # by construction; the ham leg's retrieved context is the HAM memory
-            # system (a read cost, captured in wall-clock / prompt tokens), not
-            # training data.
+            # system (a read cost, captured in prompt tokens), not training data.
             tokens_seen += int((labels >= 0).sum().item())
             if step in ckpt_set:
-                wall = time.perf_counter() - wall0
                 avg_loss = (sum(losses) / len(losses)) if losses else None
-                curve.append(_eval(step, tokens_seen, wall, avg_loss))
+                curve.append(_eval(step, tokens_seen, avg_loss))
         model.eval()
         return curve
