@@ -19,7 +19,7 @@ from ..config import MemoryConfig
 from . import importance as imp
 from .consolidation import Consolidator
 from .retrieval import retrieve
-from .store import EPISODIC, SEMANTIC, MemoryRecord, MemoryStore
+from .store import EPISODIC, EVICTED, SEMANTIC, MemoryRecord, MemoryStore
 
 
 def chunk_text(text: str, max_chars: int) -> list[str]:
@@ -114,6 +114,8 @@ class HAMemory:
                 rec.folded = True
             if self.spec.eviction == "fifo":
                 self._evict_fifo()
+            elif self.spec.eviction == "utility":
+                self._maintain_utility()
 
     def _evict_fifo(self) -> None:
         """Recency/FIFO forgetting: keep only the most recent ``retention_capacity``
@@ -129,11 +131,39 @@ class HAMemory:
         for r in live[:len(live) - cap]:
             r.evicted = True
 
+    def _maintain_utility(self) -> None:
+        """Utility-driven forgetting (paper Eq 6): re-score every retrievable item
+        at the current logical time and drop those whose utility fell below the
+        episodic threshold. Runs between turns as asynchronous maintenance.
+
+        Gated on retrieval history: eviction needs the reuse signal from prior
+        retrievals, so it is a no-op until at least one item has been retrieved.
+        This avoids uninformed over-eviction during the initial ingest of a fresh
+        history (e.g. the proof-of-concept's single-pass ingest, where no
+        retrieval has yet occurred) and lets eviction act in a realistic
+        multi-session lifetime where retrievals accumulate reuse between turns."""
+        if not any(r.reuse > 0 for r in self.store.retrievable()):
+            return
+        for r in self.store.retrievable():
+            u = imp.compute_importance(
+                r, self.cfg, self._clock,
+                use_recency=self.spec.use_recency,
+                use_novelty=self.spec.use_novelty,
+                use_reuse=self.spec.use_reuse)
+            if u < self.cfg.episodic_threshold:
+                r.evicted = True
+                r.tier = EVICTED
+
     def _assign_tier(self, rec: MemoryRecord) -> None:
         if self.spec.tiering == "random":
             rec.tier = self._rng.choice([EPISODIC, SEMANTIC])
         else:
-            rec.tier = imp.assign_tier(rec.importance, self.cfg)
+            tier = imp.assign_tier(rec.importance, self.cfg)
+            if tier == EVICTED:
+                rec.evicted = True
+                rec.tier = EVICTED
+            else:
+                rec.tier = tier
 
     def _update_working(self, rec: MemoryRecord) -> None:
         self.working.append(rec)

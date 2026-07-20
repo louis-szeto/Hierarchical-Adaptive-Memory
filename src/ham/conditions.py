@@ -21,7 +21,7 @@ class ConditionSpec:
     retrieval_method: str = "cosine"  # "cosine" | "faiss" | "lexical"
     consolidation: bool = True
     consolidation_mode: str = "adaptive"  # "adaptive" | "static" (static_prototype)
-    eviction: str = "none"  # "none" | "fifo" (recency_fifo forgetting analogue)
+    eviction: str = "none"  # "none" | "fifo" | "utility" (utility-driven forgetting, Eq 6)
     use_recency: bool = True
     use_novelty: bool = True
     use_reuse: bool = True
@@ -56,6 +56,7 @@ def _base_ham(comp: CompressionConfig) -> dict:
         mode="retrieval",
         retrieval_method="cosine",
         consolidation=True,
+        eviction="utility",
         use_recency=True,
         use_novelty=True,
         use_reuse=True,

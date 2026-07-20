@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 
 from ..config import MemoryConfig
-from .store import EPISODIC, SEMANTIC, WORKING, MemoryRecord
+from .store import EPISODIC, EVICTED, SEMANTIC, WORKING, MemoryRecord
 
 
 def _squash_count(x: float, k: float = 3.0) -> float:
@@ -77,7 +77,7 @@ def assign_tier(importance: float, cfg: MemoryConfig) -> str:
         return SEMANTIC
     if importance >= cfg.episodic_threshold:
         return EPISODIC
-    return EPISODIC  # low-importance still stored episodically; working is recency-based
+    return EVICTED  # u < episodic_threshold -> dropped (paper Eq 6, utility-driven forgetting)
 
 
 def assign_bits(

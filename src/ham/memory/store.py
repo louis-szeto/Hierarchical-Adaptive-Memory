@@ -9,6 +9,7 @@ import numpy as np
 WORKING = "working"
 EPISODIC = "episodic"
 SEMANTIC = "semantic"
+EVICTED = "evicted"  # policy sentinel: dropped by utility-driven forgetting (paper Eq 6)
 TIERS = (WORKING, EPISODIC, SEMANTIC)
 
 
@@ -57,8 +58,9 @@ class MemoryRecord:
             "is_prototype": self.is_prototype,
             "members": self.members,
             "n_atomic_facts": self.n_atomic_facts,
-            "quantization_error": (None if self.quantization_error is None
-                                   else round(self.quantization_error, 6)),
+            # NOTE: quantization_error is deliberately NOT serialized to disk --
+            # it is an in-memory diagnostic surfaced only via the aggregate's
+            # mean_quantization_error, so it cannot inflate physical_serialized_bytes.
         }
 
 

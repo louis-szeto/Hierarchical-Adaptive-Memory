@@ -2,7 +2,7 @@ import numpy as np
 
 from ham.config import MemoryConfig
 from ham.memory import importance as imp
-from ham.memory.store import EPISODIC, SEMANTIC, MemoryRecord
+from ham.memory.store import EPISODIC, EVICTED, SEMANTIC, MemoryRecord
 
 
 def _rec(**kw):
@@ -33,7 +33,7 @@ def test_tier_thresholds_monotone():
     cfg = MemoryConfig(semantic_threshold=0.6, episodic_threshold=0.3)
     assert imp.assign_tier(0.9, cfg) == SEMANTIC
     assert imp.assign_tier(0.45, cfg) == EPISODIC
-    assert imp.assign_tier(0.1, cfg) == EPISODIC
+    assert imp.assign_tier(0.1, cfg) == EVICTED  # u < episodic_threshold -> evicted (Eq 6)
 
 
 def test_ablation_flags_change_score():
