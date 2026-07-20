@@ -26,8 +26,8 @@ stage:
 
 backend:
   kind: hf
-  model_id: Qwen/Qwen2.5-1.5B-Instruct
-  device: auto
+  model_id: Qwen/Qwen3-1.7B
+  device: cpu
   dtype: bfloat16
   quantization: null
   max_new_tokens: 64
@@ -54,7 +54,7 @@ memory:
 
 dataset:
   name: locomo
-  path: null                 # e.g. data/locomo10.json
+  path: data/locomo10.json   # snap-research/locomo @ 3eb6f2c (see Appendix provenance)
   sample_limit: null
   seed: 0
 

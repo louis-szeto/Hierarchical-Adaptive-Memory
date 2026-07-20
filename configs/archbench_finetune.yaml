@@ -1,12 +1,26 @@
-# Post-hoc cost-to-target + weight-drift analysis on the toy-architecture models.
-# Two toy arms only (standard_memory flat block vs ham_memory HAM block), recall task,
-# r=0.0, same toy settings + AdamW cadence (checkpoint_every=20) as the toy-architecture
-# study, so this is literally a post-hoc read-out of those models' training curves.
+# Fine-tuning cost-to-target + drift-from-pretrained analysis on the
+# toy-architecture models (HEADLINE post-hoc).
+#
+# Two toy arms only (standard_memory flat block vs ham_memory HAM block), recall
+# task, r=0.0, same toy settings + AdamW cadence (checkpoint_every=20) as the
+# toy-architecture study. The runner runs PRETRAIN first (saves each condition's
+# final state_dict to <out>/pretrained_checkpoints/<condition>.pt), then loads
+# those weights and FINE-TUNES both arms on a HELD-OUT association set (a fresh
+# corpus with seed = cfg.seed + 1001 and n_keys = 2 * pretrain_n_keys, so the
+# model must learn new associations). Drift is measured FROM the loaded
+# pretrained weights (||w - w_pretrained||_2), a real catastrophic-forgetting
+# proxy.
+#
+# Parity target = max(standard_quality_on_heldout) - delta; cost = first
+# checkpoint at-or-above the target (no interpolation); the headline is the
+# HAM/standard step + token + drift ratios.
+#
 # Requires torch: pip install -e ".[hf]"
-#   ham archbench --config configs/archbench_finetune.yaml --out results/archbench_finetune
+#   ham archbench        --config configs/archbench_finetune.yaml --out results/archbench_finetune
+#   ham archbench-report --run-dir results/archbench_finetune     --out results/archbench_finetune/artifacts
 name: archbench_finetune
 seed: 0
-notes: "Post-hoc cost-to-target + drift on toy-architecture models (standard vs HAM, recall, r=0.0)."
+notes: "Fine-tuning post-hoc on toy-architecture models (standard vs HAM, recall, r=0.0, fine-tuned from pretrained checkpoints on a held-out set)."
 
 stage:
   target_stage: F_architecture_level
@@ -24,7 +38,7 @@ stats:
 archbench:
   trainer: torch
   task: recall
-  regime: pretrain
+  regime: both          # pretrain (saves state_dicts) -> finetune (loads them)
   conditions: [standard_memory, ham_memory]
   redundancy_levels: [0.0]
   dim: 64
@@ -46,3 +60,7 @@ archbench:
   n_eval_streams: 64
   target_quality: 0.9
   device: cpu
+  # Held-out fine-tune corpus: fresh seed + higher key count.
+  finetune_seed_offset: 1001
+  finetune_n_keys_multiplier: 2.0
+  # finetune_init_from_dir is left unset: regime=both passes state_dicts in memory.

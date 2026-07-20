@@ -113,26 +113,48 @@ def _write_quality_bytes_table(out_dir, aggregate, smoke) -> str:
 
 
 def _write_finetune_posthoc_table(out_dir, finetune_posthoc, smoke) -> str:
-    """Fine-tuning post-hoc on the toy models: standard_memory vs ham_memory
-    cost-to-target + L2 weight drift at the parity target. The toy LM is
-    trained from scratch (no zero-shot forgetting arm); the diagnostic is the
-    drift overhead HAM's extra parameters add to reach the same target."""
+    """Cost-to-target + L2 weight drift post-hoc comparing standard_memory vs
+    ham_memory. Regime-aware: when finetune curves are present the table reports
+    the fine-tuning analysis (drift measured from the loaded pretrained
+    checkpoint -- a catastrophic-forgetting proxy); otherwise it falls back to
+    the pretrain (from-scratch) curves (drift from random init)."""
     path = os.path.join(out_dir, "table_finetune_posthoc.md")
     delta = (finetune_posthoc or {}).get("noninferiority_delta")
+    regime = (finetune_posthoc or {}).get("regime", "pretrain")
+    is_fin = regime == "finetune"
+    title = ("Fine-tuning post-hoc (HEADLINE): standard vs HAM memory block, "
+             "fine-tuned from pretrained checkpoints") if is_fin else (
+        "Fine-tuning post-hoc on the toy models (standard vs HAM memory block, "
+        "from-scratch pretrain)")
     lines = [
-        "# Table AB3 — Fine-tuning post-hoc on the toy models (standard vs HAM memory block)", "",
-        "Both arms are toy LMs WITH a memory block, trained from scratch under "
-        "the identical config; only the memory-block policy differs "
-        "(`standard_memory` = FlatMemory vs `ham_memory` = HamMemory).",
-        f"Parity target = max(standard_quality) − δ (δ = {_fmt(delta)}). "
-        "Cost = first checkpoint at-or-above the target (no interpolation). "
-        "drift = ‖Δw‖₂ = sqrt(sum((p − p_init)²)) over all params at that "
-        "checkpoint. ratios < 1.0 = HAM cheaper/smaller-drift; > 1.0 = HAM "
-        "more expensive.",
-        "The toy is trained from scratch (no pretrained knowledge to forget -> "
-        "no zero-shot forgetting arm; the diagnostic is the drift overhead).",
-        "",
-    ]
+        f"# Table AB3 — {title}", ""]
+    if is_fin:
+        lines += [
+            "Both arms are toy LMs WITH a memory block, FINE-TUNED from their "
+            "saved PRETRAINED checkpoints on a HELD-OUT association set (a fresh "
+            "corpus with a different seed and a higher key count, so the model "
+            "must learn new associations). Only the memory-block policy differs "
+            "(`standard_memory` = FlatMemory vs `ham_memory` = HamMemory).",
+            f"Parity target = max(standard_quality_on_heldout) − δ (δ = {_fmt(delta)}). "
+            "Cost = first checkpoint at-or-above the target (no interpolation). "
+            "drift = ‖w − w_pretrained‖₂ = sqrt(sum((p − p_pretrained)²)) over all "
+            "params at that checkpoint (a real catastrophic-forgetting proxy, "
+            "NOT training movement from random init). ratios < 1.0 = HAM "
+            "cheaper / smaller drift; > 1.0 = HAM more expensive.",
+            ""]
+    else:
+        lines += [
+            "Both arms are toy LMs WITH a memory block, trained from scratch under "
+            "the identical config; only the memory-block policy differs "
+            "(`standard_memory` = FlatMemory vs `ham_memory` = HamMemory).",
+            f"Parity target = max(standard_quality) − δ (δ = {_fmt(delta)}). "
+            "Cost = first checkpoint at-or-above the target (no interpolation). "
+            "drift = ‖Δw‖₂ = sqrt(sum((p − p_init)²)) over all params at that "
+            "checkpoint. ratios < 1.0 = HAM cheaper/smaller-drift; > 1.0 = HAM "
+            "more expensive.",
+            "The toy is trained from scratch (no pretrained knowledge to forget -> "
+            "no zero-shot forgetting arm; the diagnostic is the drift overhead).",
+            ""]
     if smoke:
         lines += [f"> **{WATERMARK}**", ""]
     cells = (finetune_posthoc or {}).get("cells") or {}
@@ -167,7 +189,7 @@ def _write_finetune_posthoc_table(out_dir, finetune_posthoc, smoke) -> str:
     # CSV companion (one row per cell x arm).
     csv_path = os.path.join(out_dir, "table_finetune_posthoc.csv")
     with open(csv_path, "w") as fh:
-        fh.write("task,redundancy,target_quality,arm,reached,quality_at_target,"
+        fh.write("task,redundancy,regime,target_quality,arm,reached,quality_at_target,"
                  "optimizer_steps_to_target,training_tokens_to_target,"
                  "drift_rms_at_target,cost_ratio_steps_ham_over_standard,"
                  "cost_ratio_tokens_ham_over_standard,"
@@ -177,7 +199,8 @@ def _write_finetune_posthoc_table(out_dir, finetune_posthoc, smoke) -> str:
             for arm in ("standard", "ham"):
                 a = cell[arm]
                 fh.write(",".join(str(v) for v in [
-                    cell["task"], cell["redundancy"], cell["target_quality"],
+                    cell["task"], cell["redundancy"], regime,
+                    cell["target_quality"],
                     arm, a["reached"], a["quality_at_target"],
                     a["optimizer_steps_to_target"], a["training_tokens_to_target"],
                     a["drift_rms_at_target"],

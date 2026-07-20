@@ -44,17 +44,24 @@ __all__ = [
 
 
 def build_trainer(cfg: ArchBenchExperimentConfig, condition: str, redundancy: float,
-                  corpus=None, device: str = "cpu"):
+                  corpus=None, device: str = "cpu", *,
+                  init_state_dict: dict | None = None,
+                  regime: str = "pretrain"):
     """Dispatch on ``cfg.archbench.trainer``. The mock trainer needs no corpus;
-    the torch trainer requires torch + a corpus (lazy torch, fails loudly)."""
+    the torch trainer requires torch + a corpus (lazy torch, fails loudly).
+    ``regime`` and ``init_state_dict`` are forwarded to both trainers (mock
+    ignores ``init_state_dict`` -- no real weights -- but accepts it for API
+    parity so callers can swap mock/torch transparently)."""
     if cfg.archbench.trainer == "mock":
-        return MockArchTrainer(cfg, condition, redundancy)
+        return MockArchTrainer(cfg, condition, redundancy, regime=regime,
+                               init_state_dict=init_state_dict)
     if cfg.archbench.trainer == "torch":
         if corpus is None:
             raise ValueError("the torch archbench trainer requires a corpus")
         require_torch()
         from .trainer import TorchArchTrainer
-        return TorchArchTrainer(cfg, condition, redundancy, corpus, device)
+        return TorchArchTrainer(cfg, condition, redundancy, corpus, device,
+                                init_state_dict=init_state_dict, regime=regime)
     raise ValueError(f"unknown trainer {cfg.archbench.trainer!r}")
 
 

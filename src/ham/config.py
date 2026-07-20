@@ -291,6 +291,22 @@ class ArchBenchConfig:
     # iso-quality target for the cost-to-target metric
     target_quality: float = 0.9
     device: str = "cpu"        # "cpu" | "cuda" | "auto"
+    # --- Fine-tune regime (regime in {"finetune", "both"}) -------------------
+    # The held-out association set is a FRESH corpus: different seed and (for
+    # recall) a higher key count, so the model must learn new associations on
+    # top of the pretrained checkpoint (option (a) of the design). Drift is
+    # measured from the loaded pretrained weights, so it is a real
+    # catastrophic-forgetting proxy, not training movement from random init.
+    # ``finetune_seed_offset`` is added to ``cfg.seed`` for the held-out corpus.
+    finetune_seed_offset: int = 1001
+    # Multiplier on the pretrain ``n_items`` to set the held-out n_keys (recall).
+    # 1.0 = same key count, different permutation; >1.0 = fresh, larger key set.
+    finetune_n_keys_multiplier: float = 2.0
+    # Optional path to a previous run's ``pretrained_checkpoints/`` dir for
+    # cross-invocation fine-tune (regime = "finetune" reading a pretrain dir).
+    # When ``regime == "both"`` the runner passes state dicts in memory and
+    # ignores this field; when ``regime == "finetune"`` only, the dir is required.
+    finetune_init_from_dir: str | None = None
     # mock-trainer synthetic-curve knobs (mock only)
     mock_std_bytes_per_token: float = 256.0
     mock_ham_compress_at_max_redundancy: float = 0.4

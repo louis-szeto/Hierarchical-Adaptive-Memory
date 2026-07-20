@@ -40,12 +40,12 @@ def test_ham_advantage_grows_with_redundancy(tmp_path):
     out = str(tmp_path / "run")
     run_archbench(_cfg(), out)
     a = json.load(open(os.path.join(out, "aggregate.json")))
-    lo = a["recall|r=0.0|ham_memory"]["bytes_ratio_vs_standard"]
-    hi = a["recall|r=0.9|ham_memory"]["bytes_ratio_vs_standard"]
+    lo = a["recall|r=0.0|pretrain|ham_memory"]["bytes_ratio_vs_standard"]
+    hi = a["recall|r=0.9|pretrain|ham_memory"]["bytes_ratio_vs_standard"]
     assert hi < lo                 # advantage grows with redundancy
     assert hi < 1.0                # ham cheaper than standard at high redundancy
     # iso-quality at high redundancy (compression is near-lossless)
-    assert abs(a["recall|r=0.9|ham_memory"]["quality_delta_vs_standard"]) < 1e-9
+    assert abs(a["recall|r=0.9|pretrain|ham_memory"]["quality_delta_vs_standard"]) < 1e-9
 
 
 def test_no_consolidation_does_not_compress(tmp_path):
@@ -54,7 +54,7 @@ def test_no_consolidation_does_not_compress(tmp_path):
     run_archbench(_cfg(conditions=["no_memory", "standard_memory",
                                    "ham_memory", "ham_no_consolidation"]), out)
     a = json.load(open(os.path.join(out, "aggregate.json")))
-    nc = a["recall|r=0.9|ham_no_consolidation"]["bytes_ratio_vs_standard"]
+    nc = a["recall|r=0.9|pretrain|ham_no_consolidation"]["bytes_ratio_vs_standard"]
     assert abs(nc - 1.0) < 1e-9
 
 
@@ -202,4 +202,149 @@ def test_finetune_posthoc_skipped_when_only_one_arm_present(tmp_path):
     res = generate(out, str(tmp_path / "art"))
     md = open(os.path.join(res["out_dir"], "table_finetune_posthoc.md")).read()
     assert "EMPTY TEMPLATE" in md
+
+
+# ---------------------------------------------------------------------------
+# Fine-tune regime (pretrain -> save state_dicts -> finetune from pretrained)
+# ---------------------------------------------------------------------------
+
+def _both_cfg(**over):
+    base = {"archbench": {
+        "trainer": "mock", "task": "recall", "regime": "both",
+        "redundancy_levels": [0.0],
+        "conditions": ["standard_memory", "ham_memory"],
+        "max_steps": 100, "checkpoint_every": 20}}
+    base["archbench"].update(over)
+    return archbench_from_dict(base)
+
+
+def test_finetune_regime_emits_pretrain_and_finetune_curves(tmp_path):
+    out = str(tmp_path / "run")
+    run_archbench(_both_cfg(), out)
+    rows = [json.loads(l) for l in open(os.path.join(out, "curve.jsonl"))]
+    regimes = {r["regime"] for r in rows}
+    assert regimes == {"pretrain", "finetune"}
+    # aggregate.json keys now include the regime segment.
+    a = json.load(open(os.path.join(out, "aggregate.json")))
+    for regime in ("pretrain", "finetune"):
+        for cond in ("standard_memory", "ham_memory"):
+            key = f"recall|r=0.0|{regime}|{cond}"
+            assert key in a, key
+
+
+def test_finetune_posthoc_uses_finetune_regime_when_present(tmp_path):
+    out = str(tmp_path / "run")
+    run_archbench(_both_cfg(), out)
+    a = json.load(open(os.path.join(out, "aggregate.json")))
+    fp = a["finetune_posthoc"]
+    assert fp["regime"] == "finetune"
+    assert "HEADLINE" in fp["description"]
+    # Cells include regime=finetune.
+    cell = fp["cells"]["recall|r=0.0"]
+    assert cell["regime"] == "finetune"
+
+
+def test_finetune_posthoc_falls_back_to_pretrain_when_no_finetune(tmp_path):
+    # regime=pretrain only -> no finetune curves -> post-hoc uses pretrain.
+    out = str(tmp_path / "run")
+    run_archbench(_cfg(), out)  # default _cfg is regime=pretrain
+    a = json.load(open(os.path.join(out, "aggregate.json")))
+    fp = a["finetune_posthoc"]
+    assert fp["regime"] == "pretrain"
+
+
+def test_finetune_regime_mock_drift_from_pretrained_init(tmp_path):
+    # The mock finetune drift is smaller than the pretrain drift (fine-tuning
+    # perturbs weights less than from-scratch training), and step-0 drift is 0
+    # (model starts at the loaded pretrained checkpoint, drift is measured from
+    # that point, not from random init).
+    out = str(tmp_path / "run")
+    run_archbench(_both_cfg(), out)
+    rows = [json.loads(l) for l in open(os.path.join(out, "curve.jsonl"))]
+    fin = [r for r in rows if r["regime"] == "finetune" and r["condition"] == "ham_memory"]
+    pre = [r for r in rows if r["regime"] == "pretrain" and r["condition"] == "ham_memory"]
+    fin0 = [r for r in fin if r["step"] == 0][0]
+    assert fin0["drift_rms"] == 0.0   # drift from the loaded pretrained init
+    # At every matching step, finetune drift < pretrain drift (gentler perturbation).
+    fin_by_step = {r["step"]: r["drift_rms"] for r in fin}
+    pre_by_step = {r["step"]: r["drift_rms"] for r in pre}
+    for s, pre_d in pre_by_step.items():
+        if s > 0 and s in fin_by_step:
+            assert fin_by_step[s] < pre_d, f"step {s}: finetune drift not gentler"
+
+
+def test_finetune_regime_mock_quality_starts_above_zero(tmp_path):
+    # The mock finetune quality starts at a fraction of the ceiling (the
+    # pretrained checkpoint already knew something), unlike pretrain which
+    # starts at 0.
+    out = str(tmp_path / "run")
+    run_archbench(_both_cfg(), out)
+    rows = [json.loads(l) for l in open(os.path.join(out, "curve.jsonl"))]
+    fin0 = [r for r in rows if r["regime"] == "finetune" and r["step"] == 0][0]
+    pre0 = [r for r in rows if r["regime"] == "pretrain" and r["step"] == 0][0]
+    assert fin0["quality"] > 0.0
+    assert pre0["quality"] == 0.0
+    assert fin0["quality"] > pre0["quality"]
+
+
+def test_finetune_regime_drift_ratio_ham_over_standard_above_one(tmp_path):
+    # HAM's extra router/fusion params perturb the weights slightly more even
+    # in the finetune regime, so the drift ratio is still > 1.0.
+    out = str(tmp_path / "run")
+    run_archbench(_both_cfg(), out)
+    a = json.load(open(os.path.join(out, "aggregate.json")))
+    fp = a["finetune_posthoc"]
+    cell = fp["cells"]["recall|r=0.0"]
+    assert cell["drift_ratio_ham_over_standard"] is not None
+    assert cell["drift_ratio_ham_over_standard"] > 1.0
+
+
+def test_finetune_regime_posthoc_table_says_headline(tmp_path):
+    out = str(tmp_path / "run")
+    run_archbench(_both_cfg(), out)
+    res = generate(out, str(tmp_path / "art"))
+    md = open(os.path.join(res["out_dir"], "table_finetune_posthoc.md")).read()
+    assert "HEADLINE" in md
+    assert "w_pretrained" in md or "p_pretrained" in md
+    assert "catastrophic-forgetting" in md
+    assert "SMOKE TEST" in md  # mock -> watermarked
+
+
+def test_finetune_regime_manifest_records_regime_and_offsets(tmp_path):
+    out = str(tmp_path / "run")
+    run_archbench(_both_cfg(), out)
+    m = json.load(open(os.path.join(out, "manifest.json")))
+    assert m["regime"] == "both"
+    fc = m["fair_control"]
+    assert fc["regime"] == "both"
+    assert fc["finetune_seed_offset"] == 1001
+    assert fc["finetune_n_keys_multiplier"] == 2.0
+
+
+def test_heldout_corpus_uses_different_seed_and_higher_keys(tmp_path):
+    # The held-out corpus is a FRESH association set: different seed and a
+    # higher key count, so the model must learn new associations.
+    from ham.archbench.runner import _heldout_corpus, _n_items
+    from ham.config import archbench_from_dict
+    cfg = archbench_from_dict({"archbench": {
+        "trainer": "mock", "task": "recall", "regime": "both",
+        "redundancy_levels": [0.0],
+        "conditions": ["standard_memory", "ham_memory"]}})
+    n_pre = _n_items(cfg, "recall")
+    heldout = _heldout_corpus(cfg, "recall", 0.0)
+    # Held-out n_keys = pretrain n_keys * 2.0 multiplier.
+    assert heldout.n_items == n_pre * 2
+    # The held-out corpus has the same shape as a recall corpus.
+    assert heldout.task == "recall"
+    assert heldout.input_ids.shape[0] == cfg.archbench.n_train_streams
+
+
+def test_curve_jsonl_records_regime(tmp_path):
+    out = str(tmp_path / "run")
+    run_archbench(_cfg(), out)
+    rows = [json.loads(l) for l in open(os.path.join(out, "curve.jsonl"))]
+    assert rows
+    for r in rows:
+        assert "regime" in r
+        assert r["regime"] == "pretrain"   # default _cfg is pretrain
 

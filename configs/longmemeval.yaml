@@ -32,8 +32,8 @@ stage:
 
 backend:
   kind: hf
-  model_id: Qwen/Qwen2.5-1.5B-Instruct   # publication small; also try Llama-3.2-1B-Instruct
-  device: auto
+  model_id: Qwen/Qwen3-1.7B   # benchmark backbone (frozen); pinned commit in Appendix provenance
+  device: cpu
   dtype: bfloat16
   quantization: null                      # set "4bit" for 7B/8B on one workstation
   max_new_tokens: 64

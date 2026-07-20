@@ -125,3 +125,32 @@ def test_cost_ratio_zero_denominator():
     ham = cost_to_target([_ckpt(0, 0.95, 0.0, "ham_memory")], 0.5)
     assert std["training_tokens_to_target"] == 0
     assert cost_ratio(ham, std, "training_tokens_to_target") is None
+
+
+def _ft_ckpt(step: int, quality: float, drift: float | None = None,
+             condition: str = "standard_memory") -> ArchCheckpoint:
+    """A finetune-regime checkpoint for the post-hoc regime-aware tests."""
+    return ArchCheckpoint(
+        step=step, tokens_seen=step * 1000, train_loss=None, quality=quality,
+        memory_bytes=100, redundancy=0.0, condition=condition, regime="finetune",
+        drift_rms=drift)
+
+
+def test_cost_to_target_works_with_finetune_regime_checkpoints():
+    # The cost-to-target math is regime-agnostic; it only reads step/tokens/
+    # quality/drift from the ArchCheckpoint. A finetune-regime curve (quality
+    # starts above 0 because the model is pretrained) works the same way.
+    curve = [_ft_ckpt(0, 0.5, 0.0), _ft_ckpt(1, 0.7, 0.5),
+             _ft_ckpt(2, 0.85, 1.0), _ft_ckpt(3, 0.9, 1.5)]
+    c = cost_to_target(curve, 0.85)
+    assert c["reached"] is True
+    assert c["optimizer_steps_to_target"] == 2
+    assert c["drift_rms_at_target"] == 1.0
+    assert c["quality_at_target"] == 0.85
+
+
+def test_parity_target_with_finetune_curve():
+    std = [_ft_ckpt(0, 0.5, 0.0), _ft_ckpt(1, 0.85, 0.5), _ft_ckpt(2, 0.9, 1.0)]
+    # target = 0.9 - 0.03 = 0.87 -- only step 2 reaches it.
+    target = parity_target(std, 0.03)
+    assert abs(target - 0.87) < 1e-9

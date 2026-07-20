@@ -373,9 +373,9 @@ def _compute_stats(rows: list[dict], cfg: ExperimentConfig) -> dict:
     scfg = cfg.stats
     out: dict = {"noninferiority_delta": scfg.noninferiority_delta, "comparisons": {}}
 
-    # Baseline preference: uncompressed_retrieval, else full_history.
+    # Baseline preference: uncompressed_rag (canonical), then its alias, else full_history.
     baseline = None
-    for cand in ("uncompressed_retrieval", "full_history"):
+    for cand in ("uncompressed_rag", "uncompressed_retrieval", "full_history"):
         if cand in conds:
             baseline = cand
             break
