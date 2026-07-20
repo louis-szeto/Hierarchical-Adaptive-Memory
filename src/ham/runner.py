@@ -182,6 +182,14 @@ def _run_one(cfg, backend, embedder, ex, spec, cuda_probe, store_root) -> dict:
     acc = mem.serialize(store_dir)
     index_size = _dir_size(store_dir)
 
+    # Per-item vector reconstruction error (paper Eq 8): mean over the records
+    # actually serialized. None when there is no memory store (memory_off /
+    # full_history) or no quantization was applied (kept back-compat / additive
+    # diagnostic; not read into bytes/quality).
+    q_errs = [r.quantization_error for r in mem.store.retrievable()
+              if r.quantization_error is not None]
+    mean_quantization_error = float(np.mean(q_errs)) if q_errs else None
+
     rss, rss_reason = peak_cpu_rss_bytes()
     cuda = cuda_probe.read()
     energy_stats = energy.stop()
@@ -234,6 +242,9 @@ def _run_one(cfg, backend, embedder, ex, spec, cuda_probe, store_root) -> dict:
         "vector_quant": acc.vector_quant,
         "index_size_bytes": index_size,
         "n_retained_items": acc.n_items,
+        # Per-item quantization distortion (paper Eq 8): mean over the records
+        # in this example's store that were quantized. Additive diagnostic.
+        "mean_quantization_error": mean_quantization_error,
         # Latency / throughput
         "retrieval_latency_s": cdiag["retrieval_latency_s"],
         "context_build_latency_s": cdiag["context_build_latency_s"],
@@ -277,6 +288,7 @@ _MEAN_FIELDS = [
     "tier_working", "tier_episodic", "tier_semantic", "n_prototypes",
     "peak_cpu_rss_bytes", "peak_cuda_allocated_bytes", "peak_cuda_reserved_bytes",
     "energy_joules", "retrieval_recall_at_k", "retrieval_mrr",
+    "mean_quantization_error",
 ]
 
 # Condition metadata carried through aggregation (constant per condition).

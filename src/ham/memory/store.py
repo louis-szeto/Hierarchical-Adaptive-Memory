@@ -34,6 +34,12 @@ class MemoryRecord:
     evicted: bool = False  # removed by an eviction policy (recency_fifo forgetting)
     members: list[int] = field(default_factory=list)  # episodic ids under a prototype
     n_atomic_facts: int = 1
+    # Per-item vector reconstruction error (paper Eq 8): mean-abs ‖x − x̂‖ over
+    # the embedding's elements after quantization for storage. None until the
+    # record's vector has actually been quantized for serialization; 0.0 when
+    # the store is serialized without vector quantization (vector_quant='none').
+    # Pure diagnostic -- never read into bytes/quality computation.
+    quantization_error: float | None = None
 
     def to_meta(self) -> dict:
         return {
@@ -51,6 +57,8 @@ class MemoryRecord:
             "is_prototype": self.is_prototype,
             "members": self.members,
             "n_atomic_facts": self.n_atomic_facts,
+            "quantization_error": (None if self.quantization_error is None
+                                   else round(self.quantization_error, 6)),
         }
 
 

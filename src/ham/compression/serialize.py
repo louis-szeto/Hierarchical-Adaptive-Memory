@@ -29,6 +29,12 @@ class ByteAccounting:
     n_facts: int
     text_codec: str
     vector_quant: str
+    # Per-item reconstruction error (paper Eq 8): for each stored embedding,
+    # mean-abs ‖x − x̂‖ after quantization. Length == n_items when quantization
+    # was applied (int8/int4); None when vectors are stored unquantized or absent
+    # (vector_quant='none'/'pq' or no embeddings). Pure diagnostic -- it is NOT
+    # read into bytes/quality computation anywhere downstream.
+    per_item_quantization_error: list[float] | None = None
 
     @property
     def logical_bytes(self) -> int:
@@ -65,6 +71,7 @@ class ByteAccounting:
             "bytes_per_fact": self.bytes_per_fact,
             "text_codec": self.text_codec,
             "vector_quant": self.vector_quant,
+            "per_item_quantization_error": self.per_item_quantization_error,
         }
         return d
 
@@ -112,6 +119,7 @@ def serialize_snapshot(
     physical_vector_bytes = 0
     vq_used = vector_quant_name
     vec_meta: dict = {"vector_quant": vector_quant_name}
+    per_item_error: list[float] | None = None
     if embeddings is not None and len(embeddings) > 0:
         embeddings = np.asarray(embeddings, dtype=np.float32)
         logical_vector_bytes = int(embeddings.nbytes)  # float32 logical size
@@ -128,6 +136,11 @@ def serialize_snapshot(
                 + struct.pack("<I", len(payload["codes"])) + payload["codes"]
             )
             physical_vector_bytes = _write_bytes(vpath, packed)
+            # Per-item reconstruction error (paper Eq 8): mean-abs ‖x − x̂‖ over
+            # the elements of each row, after per-row affine scalar quantization.
+            x_hat = q.dequantize()
+            row_err = np.abs(embeddings - x_hat).mean(axis=1)
+            per_item_error = [float(e) for e in row_err]
         elif vector_quant_name == "pq":
             code_bytes, pq = vector_quant.pq_encode(embeddings)
             physical_vector_bytes = _write_bytes(vpath, code_bytes)
@@ -161,4 +174,5 @@ def serialize_snapshot(
         n_facts=n_facts,
         text_codec=enc.codec,
         vector_quant=vq_used,
+        per_item_quantization_error=per_item_error,
     )

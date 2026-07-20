@@ -103,6 +103,7 @@ class HAMemory:
                 rec.importance, self.spec.allocation,
                 base_bits=8 if self.spec.vector_quant == "int8" else 4,
                 seed_val=self.seed,
+                precision_threshold=self.cfg.precision_threshold,
             )
             self.store.add(rec)
             self._update_working(rec)
@@ -238,6 +239,17 @@ class HAMemory:
                 vector_quant_name=("none" if key == "none" else ("pq" if key == "pq" else key)),
                 n_facts=n_facts,
             )
+            # Record per-item vector reconstruction error (paper Eq 8) on the
+            # memory records. None for 'pq' (FAISS owns dequantization); 0.0
+            # for 'none' (no quantization applied so x_hat == x). The field is
+            # a pure diagnostic -- it is never read back into the bytes/quality
+            # computation.
+            if acc.per_item_quantization_error is not None:
+                for r, e in zip(recs, acc.per_item_quantization_error):
+                    r.quantization_error = float(e)
+            elif key == "none":
+                for r in recs:
+                    r.quantization_error = 0.0
             total.logical_text_bytes += acc.logical_text_bytes
             total.logical_vector_bytes += acc.logical_vector_bytes
             total.physical_text_bytes += acc.physical_text_bytes

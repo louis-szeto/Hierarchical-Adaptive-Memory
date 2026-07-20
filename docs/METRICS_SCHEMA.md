@@ -38,6 +38,7 @@ backend's *actual* tokenizer (mock uses a documented regex proxy).
 | `vector_quant` | Vector codec (`none`/`int8`/`int4`/`pq`). |
 | `index_size_bytes` | Total serialized store directory size. |
 | `n_retained_items` | Items physically stored. |
+| `mean_quantization_error` | Per-item vector reconstruction error (paper Eq 8): mean-abs `‖x − x̂‖` over the elements of each stored embedding after quantization, averaged over the records in this example's store. `null` when the store has no vectors (e.g. `memory_off`, `full_history`) and `0.0` when vectors are stored without quantization (`vector_quant='none'`). Additive diagnostic; not read into the bytes or quality computation. |
 
 ## Latency / throughput
 `retrieval_latency_s`, `context_build_latency_s`, `prefill_latency_s`,
@@ -82,4 +83,7 @@ update sentence for knowledge-update questions).
   bits/byte (`ham.compression.text_codec.empirical_code_length_bits`). These are
   *diagnostics*, not optimality claims.
 - Vector quantization: max/mean absolute reconstruction error and per-row uniform
-  bound (`ham.compression.vector_quant.roundtrip_error`).
+  bound (`ham.compression.vector_quant.roundtrip_error`). The per-item mean-abs
+  error is also recorded on each `MemoryRecord.quantization_error` at
+  serialization time (paper Eq 8) and surfaced per condition as
+  `mean_quantization_error` in the aggregate.

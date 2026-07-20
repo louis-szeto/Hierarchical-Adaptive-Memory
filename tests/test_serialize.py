@@ -1,6 +1,6 @@
 import numpy as np
 
-from ham.compression import serialize, text_codec
+from ham.compression import serialize, text_codec, vector_quant
 
 
 def test_text_codec_roundtrip_and_accounting():
@@ -47,3 +47,18 @@ def test_serialize_int4_smaller_than_int8(tmp_path):
     a4 = serialize.serialize_snapshot(str(tmp_path / "i4"), texts, embs, meta,
                                       vector_quant_name="int4")
     assert a4.physical_vector_bytes < a8.physical_vector_bytes
+
+
+def test_serialize_records_per_item_quantization_error(tmp_path):
+    # Paper Section 3.6 (Eq 8): the per-item reconstruction error ||x - x_hat|| is
+    # recorded for each quantized vector (a diagnostic, not an optimality claim).
+    texts = [f"item {i}" for i in range(10)]
+    embs = np.random.default_rng(2).standard_normal((10, 16)).astype(np.float32)
+    meta = [{"id": i} for i in range(10)]
+    acc = serialize.serialize_snapshot(str(tmp_path), texts, embs, meta,
+                                       vector_quant_name="int4")
+    assert acc.per_item_quantization_error is not None
+    assert len(acc.per_item_quantization_error) == 10
+    assert all(e >= 0.0 for e in acc.per_item_quantization_error)
+    # int4 quantization is lossy -> at least one nonzero reconstruction error.
+    assert any(e > 0.0 for e in acc.per_item_quantization_error)

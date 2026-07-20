@@ -21,7 +21,12 @@ from .store import EPISODIC, SEMANTIC, WORKING, MemoryRecord
 
 
 def _squash_count(x: float, k: float = 3.0) -> float:
-    """Map a non-negative count to [0, 1) with diminishing returns."""
+    """Map a non-negative count to [0, 1) with diminishing returns.
+
+    ``k`` is the paper's squash kappa (Eq 5). The default of 3.0 reproduces the
+    previous hardcoded behavior and is overridden by ``MemoryConfig.squash_kappa``
+    when called via :func:`compute_importance`.
+    """
     return 1.0 - math.exp(-x / k)
 
 
@@ -40,10 +45,12 @@ def compute_importance(
 
     The ``use_*`` flags drop individual signals (for the no_recency / no_novelty /
     no_reuse ablations) by zeroing their contribution *and* renormalizing weights
-    so remaining signals still span [0, 1].
+    so remaining signals still span [0, 1]. The squash kappa for frequency/reuse
+    comes from ``cfg.squash_kappa`` (paper Eq 5).
     """
-    freq = _squash_count(record.frequency)
-    reuse = _squash_count(record.reuse) if use_reuse else 0.0
+    kappa = cfg.squash_kappa
+    freq = _squash_count(record.frequency, k=kappa)
+    reuse = _squash_count(record.reuse, k=kappa) if use_reuse else 0.0
     rec = recency_score(now, record.last_access, cfg.recency_halflife) if use_recency else 0.0
     nov = record.novelty if use_novelty else 0.0
     pu = record.predictive_utility
@@ -73,10 +80,15 @@ def assign_tier(importance: float, cfg: MemoryConfig) -> str:
     return EPISODIC  # low-importance still stored episodically; working is recency-based
 
 
-def assign_bits(importance: float, allocation: str, base_bits: int, seed_val: int = 0) -> int:
+def assign_bits(
+    importance: float, allocation: str, base_bits: int, seed_val: int = 0,
+    precision_threshold: float = 0.66,
+) -> int:
     """Map importance to per-item vector precision (a rate-distortion allocation).
 
-    - ``ham``: high importance -> 8 bits, medium -> 4 bits, low -> 4 bits.
+    - ``ham``: importance >= ``precision_threshold`` -> 8 bits, else 4 bits. The
+      threshold defaults to 0.66 (the previous hardcoded cutoff, paper Eq 7's
+      rho); callers pass ``cfg.memory.precision_threshold`` to override.
     - ``uniform``: every item gets ``base_bits`` (isolates whether *variable*
       allocation, not mere quantization, is what matters).
     - ``random``: bits chosen pseudo-deterministically from importance hash
@@ -89,6 +101,6 @@ def assign_bits(importance: float, allocation: str, base_bits: int, seed_val: in
         h = (hash((round(importance, 4), seed_val)) & 0xFFFF) / 0xFFFF
         return 8 if h > 0.5 else 4
     # ham
-    if importance >= 0.66:
+    if importance >= precision_threshold:
         return 8
     return 4

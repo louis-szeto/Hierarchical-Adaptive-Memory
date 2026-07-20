@@ -120,6 +120,13 @@ class MemoryConfig:
     # Max retrievable items kept when an eviction policy is active (recency_fifo
     # baseline). None => unlimited (no eviction), which is HAM's default.
     retention_capacity: int = 16
+    # Paper Eq 5 squash kappa for frequency/reuse diminishing-returns
+    # (u_freq = 1 - exp(-x / kappa)). Default 3.0 reproduces the previous
+    # hardcoded constant exactly.
+    squash_kappa: float = 3.0
+    # Paper Eq 7 precision threshold rho: importance >= rho earns 8-bit vectors,
+    # otherwise 4-bit. Default 0.66 reproduces the previous hardcoded cutoff.
+    precision_threshold: float = 0.66
 
 
 @dataclass
