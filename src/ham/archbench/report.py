@@ -112,6 +112,82 @@ def _write_quality_bytes_table(out_dir, aggregate, smoke) -> str:
     return path
 
 
+def _write_finetune_posthoc_table(out_dir, finetune_posthoc, smoke) -> str:
+    """Fine-tuning post-hoc on the toy models: standard_memory vs ham_memory
+    cost-to-target + L2 weight drift at the parity target. The toy LM is
+    trained from scratch (no zero-shot forgetting arm); the diagnostic is the
+    drift overhead HAM's extra parameters add to reach the same target."""
+    path = os.path.join(out_dir, "table_finetune_posthoc.md")
+    delta = (finetune_posthoc or {}).get("noninferiority_delta")
+    lines = [
+        "# Table AB3 — Fine-tuning post-hoc on the toy models (standard vs HAM memory block)", "",
+        "Both arms are toy LMs WITH a memory block, trained from scratch under "
+        "the identical config; only the memory-block policy differs "
+        "(`standard_memory` = FlatMemory vs `ham_memory` = HamMemory).",
+        f"Parity target = max(standard_quality) − δ (δ = {_fmt(delta)}). "
+        "Cost = first checkpoint at-or-above the target (no interpolation). "
+        "drift = ‖Δw‖₂ = sqrt(sum((p − p_init)²)) over all params at that "
+        "checkpoint. ratios < 1.0 = HAM cheaper/smaller-drift; > 1.0 = HAM "
+        "more expensive.",
+        "The toy is trained from scratch (no pretrained knowledge to forget -> "
+        "no zero-shot forgetting arm; the diagnostic is the drift overhead).",
+        "",
+    ]
+    if smoke:
+        lines += [f"> **{WATERMARK}**", ""]
+    cells = (finetune_posthoc or {}).get("cells") or {}
+    if not cells:
+        lines += ["_EMPTY TEMPLATE — no standard_memory/ham_memory pair found in the run._", ""]
+        _write(path, "\n".join(lines))
+        return path
+    header = ("| task | redundancy | target | arm | reached | quality@target | "
+              "steps | tokens | drift | step ratio | token ratio | drift ratio |")
+    sep = "|" + "---|" * 12
+    lines += [header, sep]
+    for key in sorted(cells.keys()):
+        cell = cells[key]
+        for arm in ("standard", "ham"):
+            a = cell[arm]
+            ratio_step = cell["cost_ratio_steps_ham_over_standard"] if arm == "ham" else None
+            ratio_tok = cell["cost_ratio_tokens_ham_over_standard"] if arm == "ham" else None
+            ratio_drift = cell["drift_ratio_ham_over_standard"] if arm == "ham" else None
+            ref = "1 (ref)" if arm == "standard" else None
+            lines.append(
+                f"| {cell['task']} | {cell['redundancy']} | "
+                f"{_fmt(cell['target_quality'])} | {arm} | "
+                f"{'yes' if a['reached'] else 'no'} | {_fmt(a['quality_at_target'])} | "
+                f"{_fmt(a['optimizer_steps_to_target'])} | "
+                f"{_fmt(a['training_tokens_to_target'])} | "
+                f"{_fmt(a['drift_rms_at_target'])} | "
+                f"{_fmt(ref) if ref is not None else _fmt(ratio_step)} | "
+                f"{_fmt(ref) if ref is not None else _fmt(ratio_tok)} | "
+                f"{_fmt(ref) if ref is not None else _fmt(ratio_drift)} |")
+    lines.append("")
+    _write(path, "\n".join(lines))
+    # CSV companion (one row per cell x arm).
+    csv_path = os.path.join(out_dir, "table_finetune_posthoc.csv")
+    with open(csv_path, "w") as fh:
+        fh.write("task,redundancy,target_quality,arm,reached,quality_at_target,"
+                 "optimizer_steps_to_target,training_tokens_to_target,"
+                 "drift_rms_at_target,cost_ratio_steps_ham_over_standard,"
+                 "cost_ratio_tokens_ham_over_standard,"
+                 "drift_ratio_ham_over_standard\n")
+        for key in sorted(cells.keys()):
+            cell = cells[key]
+            for arm in ("standard", "ham"):
+                a = cell[arm]
+                fh.write(",".join(str(v) for v in [
+                    cell["task"], cell["redundancy"], cell["target_quality"],
+                    arm, a["reached"], a["quality_at_target"],
+                    a["optimizer_steps_to_target"], a["training_tokens_to_target"],
+                    a["drift_rms_at_target"],
+                    cell["cost_ratio_steps_ham_over_standard"] if arm == "ham" else "",
+                    cell["cost_ratio_tokens_ham_over_standard"] if arm == "ham" else "",
+                    cell["drift_ratio_ham_over_standard"] if arm == "ham" else "",
+                ]) + "\n")
+    return path
+
+
 def _figures(out_dir, aggregate, smoke) -> list[str]:
     try:
         import matplotlib
@@ -185,8 +261,13 @@ def generate(run_dir: str, out_dir: str) -> dict:
     _load_jsonl(os.path.join(run_dir, "curve.jsonl"))  # presence check
     smoke = _is_smoke(manifest)
 
+    # The fine-tuning post-hoc block is serialized as a nested key inside
+    # aggregate.json by the runner.
+    finetune_posthoc = (aggregate or {}).pop("finetune_posthoc", None)
+
     made = [_write_redundancy_table(out_dir, aggregate, smoke),
-            _write_quality_bytes_table(out_dir, aggregate, smoke)]
+            _write_quality_bytes_table(out_dir, aggregate, smoke),
+            _write_finetune_posthoc_table(out_dir, finetune_posthoc, smoke)]
     made.extend(_figures(out_dir, aggregate, smoke))
 
     banner = _poc_banner(manifest)

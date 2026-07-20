@@ -1,4 +1,4 @@
-.PHONY: help install install-hf test smoke smoke-figures longmemeval locomo synthetic report arch-demo poc-real finetune-smoke finetune-real archbench-smoke archbench-toy kvbench-smoke kvbench-real clean
+.PHONY: help install install-hf test smoke smoke-figures longmemeval locomo synthetic report arch-demo poc-real archbench-smoke archbench-toy kvbench-smoke kvbench-real clean
 
 PY ?= python
 CONFIG ?= configs/smoke.yaml
@@ -17,8 +17,6 @@ help:
 	@echo "  report         Build paper-ready tables/figures from a results dir (OUT=...)"
 	@echo "  arch-demo      Run the optional stage-F HAM-layer toy integration (needs torch)"
 	@echo "  poc-real       Small REAL-MODEL proof of concept (SmolLM2-135M-Instruct, CPU)"
-	@echo "  finetune-smoke Stage-C fine-tuning cost-to-target (mock trainer, watermarked)"
-	@echo "  finetune-real  Stage-C fine-tuning cost-to-target (real SmolLM2-135M, needs [hf])"
 	@echo "  archbench-smoke Stage-F toy arch memory-block compression (mock, watermarked)"
 	@echo "  archbench-toy  Stage-F toy arch memory-block compression (real torch toy model)"
 	@echo "  kvbench-smoke  Stage-D KV-cache compression (mock, watermarked)"
@@ -58,14 +56,6 @@ arch-demo:
 poc-real:
 	$(PY) -m ham.cli run    --config configs/poc_real_smollm.yaml --out results/poc_real_smollm
 	$(PY) -m ham.cli report --run-dir results/poc_real_smollm --out results/poc_real_smollm/artifacts
-
-finetune-smoke:
-	$(PY) -m ham.cli finetune        --config configs/finetune_smoke.yaml --out results/finetune_smoke
-	$(PY) -m ham.cli finetune-report --run-dir results/finetune_smoke  --out results/finetune_smoke/artifacts
-
-finetune-real:
-	$(PY) -m ham.cli finetune        --config configs/finetune_smollm.yaml --out results/finetune_smollm
-	$(PY) -m ham.cli finetune-report --run-dir results/finetune_smollm  --out results/finetune_smollm/artifacts
 
 archbench-smoke:
 	$(PY) -m ham.cli archbench        --config configs/archbench_smoke.yaml --out results/archbench_smoke

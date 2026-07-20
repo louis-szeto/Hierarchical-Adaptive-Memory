@@ -156,75 +156,6 @@ class StatsConfig:
 
 
 @dataclass
-class FinetuneConfig:
-    """Stage-C fine-tuning experiment knobs.
-
-    NEW DESIGN (per-leg training with HAM injected into ham leg's training):
-
-    Two legs are trained INDEPENDENTLY from the IDENTICAL baseline model:
-
-    - ``weights_only``  -> SFT on no-context prompts (``Question -> Answer``)
-    - ``ham_augmented`` -> SFT on context-augmented prompts (``Context + Question -> Answer``)
-
-    Both legs start from the same frozen checkpoint (step 0 invariant enforced), each
-    has its own optimizer/trajectory, and each is evaluated with its matching prompt
-    mode. The headline metric is cost-to-target per leg (optimizer steps / training
-    tokens / wall-clock to reach a common accuracy threshold T) plus the ham/weights
-    ratio.
-
-    The target threshold T defaults to 0.95 (non-degenerate: both legs require training
-    and both can reach it with 12 simple facts). The old parity mode is available as
-    an option (target_accuracy=null -> parity with weights_only peak - delta).
-    """
-
-    trainer: str = "mock"  # "mock" | "hf"
-    optimizer: str = "adamw"  # "adamw" | "sgd" (hf only)
-    learning_rate: float = 1e-4  # Increased from 5e-5 for faster convergence
-    batch_size: int = 4
-    max_steps: int = 300  # Increased from 200 for more headroom to reach 0.95
-    checkpoint_every: int = 20  # eval each leg every N optimizer steps
-    tokens_per_step: int = 1024  # mock cost unit (steps -> tokens); hf measures real
-    # Target accuracy threshold T for cost-to-target. Both legs train until accuracy >= T.
-    # Default 0.95 ensures non-degenerate regime: ham starts ~0.92 (retrieval) so it
-    # also needs training, and weights can reach ~1.0 with 12 simple facts.
-    # None => old parity mode (weights_only max - delta), which is degenerate for this design.
-    target_accuracy: float | None = 0.95
-    # Parity mode parameters (only used when target_accuracy is None)
-    parity_with: str = "weights_only"
-    noninferiority_delta: float = 0.03
-    # Mock-trainer deterministic curve parameters (only used when trainer == "mock").
-    # NEW curve behavior: weights climbs from 0, ham climbs from retrieval baseline.
-    mock_weights_asymptote: float = 1.0  # weights_only can reach 1.0 with simple facts
-    mock_weights_rate: float = 2.0e-4  # faster learning rate
-    mock_ham_baseline: float = 0.92  # retrieval-only at step 0 (HIGHER to avoid echo bug)
-    mock_ham_asymptote: float = 1.0  # ham can also reach ceiling
-    mock_ham_rate: float = 3.0e-4  # ham learns slightly faster (uses context)
-    mock_seconds_per_step: float = 0.25  # simulated wall-clock per optimizer step
-
-    def __post_init__(self) -> None:
-        # YAML may load scientific notation as string; coerce to float.
-        if isinstance(self.learning_rate, str):
-            self.learning_rate = float(self.learning_rate)
-        if isinstance(self.mock_weights_rate, str):
-            self.mock_weights_rate = float(self.mock_weights_rate)
-        if isinstance(self.mock_ham_rate, str):
-            self.mock_ham_rate = float(self.mock_ham_rate)
-
-        if self.trainer not in ("mock", "hf"):
-            raise ValueError(f"finetune.trainer must be 'mock' or 'hf', got {self.trainer!r}")
-        if self.optimizer not in ("adamw", "sgd"):
-            raise ValueError(f"finetune.optimizer must be 'adamw' or 'sgd', got {self.optimizer!r}")
-        if self.max_steps <= 0 or self.checkpoint_every <= 0:
-            raise ValueError("finetune.max_steps and finetune.checkpoint_every must be positive")
-        if self.batch_size <= 0:
-            raise ValueError("finetune.batch_size must be positive")
-        if self.target_accuracy is not None and not 0.0 <= self.target_accuracy <= 1.0:
-            raise ValueError(f"finetune.target_accuracy must be in [0, 1], got {self.target_accuracy}")
-        if self.target_accuracy is None and self.parity_with not in ("weights_only", "ham_augmented"):
-            raise ValueError(f"finetune.parity_with must be 'weights_only' or 'ham_augmented', got {self.parity_with!r}")
-
-
-@dataclass
 class ExperimentConfig:
     name: str = "smoke"
     seed: int = 0
@@ -303,94 +234,10 @@ def from_dict(raw: dict[str, Any]) -> ExperimentConfig:
 
 
 # ---------------------------------------------------------------------------
-# Stage-C fine-tuning experiment config (kept separate from ExperimentConfig
-# so the stage-E frozen-weight invariants are never disturbed). See
-# docs/FINETUNING_PROTOCOL.md.
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class FinetuneExperimentConfig:
-    """A stage-C fine-tuning run: identical fine-tuning in both arms, with the
-    eval-time memory policy (memory_off vs ham_memory) as the sole variable.
-
-    The model weights ARE modified (lifecycle stage C). ``base_weights_changed``
-    is recorded truthfully in the manifest (= trainer == 'hf'); mock-trainer runs
-    change no weights and are watermarked ``SMOKE TEST``.
-    """
-
-    name: str = "finetune"
-    seed: int = 0
-    conditions: list[str] = field(
-        default_factory=lambda: ["weights_only", "ham_augmented"])
-    stage: StageConfig = field(default_factory=lambda: StageConfig(
-        target_stage="C_finetuning", base_weights_changed=True,
-        persistent_across_sessions=True, integration_mode="external_context",
-        trainable_router=False))
-    backend: BackendConfig = field(default_factory=BackendConfig)
-    embedding: EmbeddingConfig = field(default_factory=EmbeddingConfig)
-    compression: CompressionConfig = field(default_factory=CompressionConfig)
-    memory: MemoryConfig = field(default_factory=MemoryConfig)
-    dataset: DatasetConfig = field(default_factory=DatasetConfig)
-    eval: EvalConfig = field(default_factory=EvalConfig)
-    stats: StatsConfig = field(default_factory=StatsConfig)
-    finetune: FinetuneConfig = field(default_factory=FinetuneConfig)
-    notes: str = ""
-
-    @property
-    def is_smoke(self) -> bool:
-        """A finetune run is SMOKE iff it uses the mock trainer (no real training,
-        no weight changes). Mirrors ``ExperimentConfig.is_smoke``'s backend rule."""
-        return self.finetune.trainer == "mock"
-
-    @property
-    def base_weights_changed(self) -> bool:
-        """Truthful: weights change only under the real (hf) trainer."""
-        return self.finetune.trainer == "hf"
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-    def config_hash(self) -> str:
-        payload = json.dumps(self.to_dict(), sort_keys=True).encode("utf-8")
-        return hashlib.sha256(payload).hexdigest()[:16]
-
-
-_FINETUNE_NESTED = {
-    **_NESTED,
-    "finetune": FinetuneConfig,
-}
-
-
-def finetune_from_dict(raw: dict[str, Any]) -> FinetuneExperimentConfig:
-    raw = dict(raw)
-    kwargs: dict[str, Any] = {}
-    for key, cls in _FINETUNE_NESTED.items():
-        if key in raw:
-            section = raw.pop(key)
-            if section is None:
-                section = {}
-            if not isinstance(section, dict):
-                raise ValueError(f"config section '{key}' must be a mapping")
-            kwargs[key] = _coerce(cls, section)
-    valid_top = {f.name for f in FinetuneExperimentConfig.__dataclass_fields__.values()}
-    unknown = set(raw) - valid_top
-    if unknown:
-        raise ValueError(
-            f"FinetuneExperimentConfig: unknown config keys {sorted(unknown)}")
-    kwargs.update(raw)
-    return FinetuneExperimentConfig(**kwargs)
-
-
-def load_finetune_config(path: str) -> FinetuneExperimentConfig:
-    with open(path) as fh:
-        raw = yaml.safe_load(fh) or {}
-    return finetune_from_dict(raw)
-
-
-# ---------------------------------------------------------------------------
 # Stage-F architecture memory-block compression experiment (toy model).
-# Separate from the stage-E/C configs; see docs/ARCHBENCH_PROTOCOL.md.
+# Separate from the stage-E config; see docs/ARCHBENCH_PROTOCOL.md. The stage-F
+# experiment also carries the fine-tuning post-hoc on its toy models (standard
+# flat memory block vs HAM memory block) -- it is NOT a separate experiment.
 # ---------------------------------------------------------------------------
 
 
@@ -528,7 +375,7 @@ def load_archbench_config(path: str) -> ArchBenchExperimentConfig:
 
 # ---------------------------------------------------------------------------
 # Stage-D inference KV-cache compression experiment (real frozen model).
-# Separate from the stage-E/C/F configs; see docs/KVBENCH_PROTOCOL.md.
+# Separate from the stage-E/F configs; see docs/KVBENCH_PROTOCOL.md.
 # ---------------------------------------------------------------------------
 
 

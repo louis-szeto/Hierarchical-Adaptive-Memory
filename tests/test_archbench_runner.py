@@ -5,6 +5,8 @@ import json
 import os
 
 from ham.archbench import build_trainer
+from ham.archbench.mock import MockArchTrainer
+from ham.archbench.protocol import ArchCheckpoint
 from ham.archbench.report import generate
 from ham.archbench.runner import run_archbench
 from ham.config import archbench_from_dict
@@ -82,3 +84,122 @@ def test_build_trainer_torch_requires_corpus():
         assert False, "expected ValueError"
     except ValueError as e:
         assert "corpus" in str(e).lower()
+
+
+# ---------------------------------------------------------------------------
+# drift_rms field (mock + serialized) and the fine-tuning post-hoc analysis
+# ---------------------------------------------------------------------------
+
+def test_mock_trainer_emits_drift_rms_curve():
+    cfg = _cfg(trainer="mock")
+    curve = MockArchTrainer(cfg, "ham_memory", 0.5).run()
+    assert len(curve) > 1
+    # Every checkpoint carries a non-None drift (mock emits a synthetic curve).
+    for c in curve:
+        assert isinstance(c, ArchCheckpoint)
+        assert c.drift_rms is not None
+    # Step 0 has zero drift; drift is monotonically non-decreasing afterwards.
+    assert curve[0].step == 0 and curve[0].drift_rms == 0.0
+    for prev, cur in zip(curve, curve[1:]):
+        assert cur.drift_rms >= prev.drift_rms
+
+
+def test_mock_drift_rms_ham_higher_than_standard():
+    # The synthetic drift scale is ordered: HAM's extra router/fusion params
+    # perturb the weights slightly more at any given step.
+    cfg = _cfg(trainer="mock")
+    std = MockArchTrainer(cfg, "standard_memory", 0.0).run()
+    ham = MockArchTrainer(cfg, "ham_memory", 0.0).run()
+    for s, h in zip(std, ham):
+        if s.step > 0:
+            assert h.drift_rms > s.drift_rms
+
+
+def test_curve_jsonl_records_drift_rms(tmp_path):
+    out = str(tmp_path / "run")
+    run_archbench(_cfg(), out)
+    rows = [json.loads(l) for l in open(os.path.join(out, "curve.jsonl"))]
+    assert rows
+    for r in rows:
+        assert "drift_rms" in r
+        assert r["drift_rms"] is not None
+
+
+def test_finetune_posthoc_block_in_aggregate_and_summary(tmp_path):
+    out = str(tmp_path / "run")
+    summary = run_archbench(_cfg(), out)
+    a = json.load(open(os.path.join(out, "aggregate.json")))
+    s = json.load(open(os.path.join(out, "summary.json")))
+    # The finetune_posthoc block is present in both aggregate.json and summary.json.
+    assert "finetune_posthoc" in a
+    assert "finetune_posthoc" in s
+    fp = a["finetune_posthoc"]
+    assert fp["noninferiority_delta"] == 0.03
+    assert fp["primary_task"] == "recall"
+    # Cells are keyed by "task|r=redundancy".
+    assert "recall|r=0.0" in fp["cells"]
+    assert "recall|r=0.9" in fp["cells"]
+
+
+def test_finetune_posthoc_finite_costs_and_drift(tmp_path):
+    out = str(tmp_path / "run")
+    run_archbench(_cfg(), out)
+    a = json.load(open(os.path.join(out, "aggregate.json")))
+    fp = a["finetune_posthoc"]
+    for key, cell in fp["cells"].items():
+        for arm in ("standard", "ham"):
+            e = cell[arm]
+            # Both arms reach the parity target on the mock (it is constructed so
+            # standard/ham are iso-quality at the same step).
+            assert e["reached"] is True, f"{key}/{arm} did not reach target"
+            assert e["optimizer_steps_to_target"] is not None
+            assert e["optimizer_steps_to_target"] > 0
+            assert e["training_tokens_to_target"] is not None
+            assert e["training_tokens_to_target"] > 0
+            assert e["drift_rms_at_target"] is not None
+            assert e["drift_rms_at_target"] > 0
+        # HAM/standard step + token ratios are finite and equal (iso-step design).
+        assert cell["cost_ratio_steps_ham_over_standard"] is not None
+        assert cell["cost_ratio_tokens_ham_over_standard"] is not None
+        assert abs(cell["cost_ratio_steps_ham_over_standard"]
+                   - cell["cost_ratio_tokens_ham_over_standard"]) < 1e-9
+        # HAM drift overhead is finite and ordered (HAM > standard).
+        assert cell["drift_ratio_ham_over_standard"] is not None
+        assert cell["drift_ratio_ham_over_standard"] > 1.0
+
+
+def test_finetune_posthoc_parity_target_equals_standard_peak_minus_delta(tmp_path):
+    out = str(tmp_path / "run")
+    run_archbench(_cfg(), out)
+    a = json.load(open(os.path.join(out, "aggregate.json")))
+    fp = a["finetune_posthoc"]
+    for key, cell in fp["cells"].items():
+        std_peak = cell["standard"]["max_quality"]
+        assert abs(cell["target_quality"] - (std_peak - 0.03)) < 1e-9, key
+
+
+def test_finetune_posthoc_table_rendered(tmp_path):
+    out = str(tmp_path / "run")
+    run_archbench(_cfg(), out)
+    res = generate(out, str(tmp_path / "art"))
+    md_path = os.path.join(res["out_dir"], "table_finetune_posthoc.md")
+    csv_path = os.path.join(res["out_dir"], "table_finetune_posthoc.csv")
+    assert os.path.exists(md_path) and os.path.exists(csv_path)
+    md = open(md_path).read()
+    assert "Fine-tuning post-hoc" in md
+    assert "| standard |" in md and "| ham |" in md
+    assert "drift ratio" in md
+
+
+def test_finetune_posthoc_skipped_when_only_one_arm_present(tmp_path):
+    # If the run has standard but no ham (or vice versa), no cell is emitted
+    # for that (task, redundancy); the report still renders an EMPTY TEMPLATE.
+    out = str(tmp_path / "run")
+    run_archbench(_cfg(conditions=["no_memory", "standard_memory"]), out)
+    a = json.load(open(os.path.join(out, "aggregate.json")))
+    fp = a["finetune_posthoc"]
+    assert fp["cells"] == {}   # no standard-vs-ham pair available
+    res = generate(out, str(tmp_path / "art"))
+    md = open(os.path.join(res["out_dir"], "table_finetune_posthoc.md")).read()
+    assert "EMPTY TEMPLATE" in md
+

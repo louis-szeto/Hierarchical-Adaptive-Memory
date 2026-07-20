@@ -36,6 +36,12 @@ class ArchCheckpoint:
     redundancy: float         # corpus redundancy level (0 = uniform/low, ->1 = high)
     condition: str
     regime: str
+    task: str = ""             # recall / lm: which task/corpus this curve is for
+    # sqrt(sum((p - p_init)**2)) over all model parameters -- the L2 norm of the
+    # weight drift from the initial weights, recorded by the torch trainer at
+    # each checkpoint. (Field name ``drift_rms`` mirrors the legacy stage-C
+    # convention.) None when not recorded (mock trainer or not applicable).
+    drift_rms: float | None = None
 
 
 def checkpoint_steps(max_steps: int, checkpoint_every: int) -> list[int]:

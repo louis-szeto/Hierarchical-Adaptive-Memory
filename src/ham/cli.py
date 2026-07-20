@@ -5,8 +5,10 @@
     ham export          --run-dir results/smoke --out results/smoke/paper_artifacts   (alias of report)
     ham info                                                                                (env diagnostics)
     ham arch-demo                                                                           (toy HAM-layer demo)
-    ham finetune         --config configs/finetune_smoke.yaml --out results/finetune_smoke   (stage-C cost-to-target)
-    ham finetune-report  --run-dir results/finetune_smoke --out results/finetune_smoke/artifacts
+    ham archbench        --config configs/archbench_toy.yaml --out results/archbench_toy    (stage-F toy memory-block experiment + fine-tuning post-hoc)
+    ham archbench-report --run-dir results/archbench_toy --out results/archbench_toy/artifacts
+    ham kvbench          --config configs/kvbench_smollm.yaml --out results/kvbench_smollm  (stage-D KV-cache compression)
+    ham kvbench-report   --run-dir results/kvbench_smollm --out results/kvbench_smollm/artifacts
 """
 
 from __future__ import annotations
@@ -77,43 +79,6 @@ def _cmd_arch_demo(args) -> int:
         return 1
     print("\n[OK] toy HAM layer: shapes preserved, frozen=no-grad, "
           "trainable router/fusion got grads, frozen base did not.", file=sys.stderr)
-    return 0
-
-
-def _cmd_finetune(args) -> int:
-    """Run the stage-C fine-tuning cost-to-target experiment."""
-    from .config import load_finetune_config
-    from .training.runner import run_finetune
-
-    cfg = load_finetune_config(args.config)
-    if args.limit is not None:
-        cfg.dataset.sample_limit = args.limit
-        cfg.dataset.num_examples = args.limit
-    summary = run_finetune(cfg, args.out)
-    ratio = summary["cost_ratio"]
-    print(json.dumps({
-        "out_dir": summary["out_dir"], "experiment": summary["experiment"],
-        "is_smoke": summary["is_smoke"], "trainer": summary["trainer"],
-        "target_stage": summary["target_stage"],
-        "base_weights_changed": summary["base_weights_changed"],
-        "target_accuracy": summary["target_accuracy"],
-        "target_kind": summary["target_kind"],
-        "cost_ratio_ham_over_weights": {
-            k: v for k, v in ratio.items() if k != "interpretation"},
-        "zeroshot_forgetting": summary.get("zeroshot"),
-    }, indent=2))
-    if summary["is_smoke"]:
-        print("\n[NOTE] Mock trainer => SMOKE TEST outputs. Not scientific results.",
-              file=sys.stderr)
-    return 0
-
-
-def _cmd_finetune_report(args) -> int:
-    """Build finetune tables/figure from a finetune run dir."""
-    from .training.report import generate
-
-    res = generate(args.run_dir, args.out)
-    print(json.dumps(res, indent=2, default=str))
     return 0
 
 
@@ -204,19 +169,6 @@ def build_parser() -> argparse.ArgumentParser:
     ad.add_argument("--fusion", default="cross_attention",
                     choices=["cross_attention", "gated_residual"])
     ad.set_defaults(func=_cmd_arch_demo)
-
-    ft = sub.add_parser("finetune",
-                        help="run the stage-C fine-tuning cost-to-target experiment")
-    ft.add_argument("--config", required=True)
-    ft.add_argument("--out", required=True)
-    ft.add_argument("--limit", type=int, default=None, help="cap number of examples")
-    ft.set_defaults(func=_cmd_finetune)
-
-    ftr = sub.add_parser("finetune-report",
-                         help="build finetune tables/figure from a finetune run dir")
-    ftr.add_argument("--run-dir", required=True)
-    ftr.add_argument("--out", required=True)
-    ftr.set_defaults(func=_cmd_finetune_report)
 
     ab = sub.add_parser("archbench",
                         help="run the stage-F toy architecture memory-block experiment")

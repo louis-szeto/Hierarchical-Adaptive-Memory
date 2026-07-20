@@ -1,0 +1,48 @@
+# Post-hoc cost-to-target + weight-drift analysis on the toy-architecture models.
+# Two toy arms only (standard_memory flat block vs ham_memory HAM block), recall task,
+# r=0.0, same toy settings + AdamW cadence (checkpoint_every=20) as the toy-architecture
+# study, so this is literally a post-hoc read-out of those models' training curves.
+# Requires torch: pip install -e ".[hf]"
+#   ham archbench --config configs/archbench_finetune.yaml --out results/archbench_finetune
+name: archbench_finetune
+seed: 0
+notes: "Post-hoc cost-to-target + drift on toy-architecture models (standard vs HAM, recall, r=0.0)."
+
+stage:
+  target_stage: F_architecture_level
+  base_weights_changed: true
+  persistent_across_sessions: true
+  integration_mode: hidden_state_fusion
+  trainable_router: true
+
+stats:
+  bootstrap_resamples: 2000
+  permutation_resamples: 2000
+  ci: 0.95
+  seed: 0
+
+archbench:
+  trainer: torch
+  task: recall
+  regime: pretrain
+  conditions: [standard_memory, ham_memory]
+  redundancy_levels: [0.0]
+  dim: 64
+  n_layers: 2
+  vocab: 256
+  n_heads: 4
+  memory_layer: 0
+  top_k: 4
+  capacity: 512
+  consolidation_radius: 0.25
+  semantic_bits: 4
+  optimizer: adamw
+  learning_rate: 1.0e-3
+  batch_size: 16
+  max_steps: 40
+  checkpoint_every: 20
+  seq_len: 64
+  n_train_streams: 256
+  n_eval_streams: 64
+  target_quality: 0.9
+  device: cpu

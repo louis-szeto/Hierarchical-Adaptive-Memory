@@ -5,6 +5,16 @@ identical toy LM (only the memory policy differs) and record a curve of quality
 and byte-honest memory size. The headline evidence is the HAM/standard
 bytes-ratio versus redundancy (the slope proves 'frequency' is the mechanism).
 See ``docs/ARCHBENCH_PROTOCOL.md``.
+
+This module ALSO carries the **fine-tuning post-hoc analysis** on the same toy
+models (``finetune_posthoc`` block): comparing the standard flat memory block
+(``standard_memory``) against the HAM memory block (``ham_memory``) on cost-to-
+target + L2 weight drift (sqrt(sum((p - p_init)**2))). It is NOT the legacy
+stage-C SmolLM2/external-retrieval fine-tune -- the toy is trained from
+scratch, so there is no pretrained knowledge to forget and no zero-shot
+forgetting arm; the diagnostic of interest is the cost-to-target and the
+weight-drift overhead HAM's extra router/fusion/encoding parameters add at
+matched quality.
 """
 
 from __future__ import annotations
@@ -20,11 +30,18 @@ import numpy as np
 from .. import stats
 from ..config import ArchBenchExperimentConfig
 from ..manifest import build_manifest
-from .protocol import CONDITIONS, ArchCheckpoint
+from .cost import HAM as COST_HAM
+from .cost import STANDARD as COST_STD
+from .cost import cost_ratio, cost_to_target, parity_target
+from .protocol import ArchCheckpoint
 from .task import build_corpus
 
 WEIGHTS = "standard_memory"
 HAM = "ham_memory"
+
+# Non-inferiority margin for the fine-tuning post-hoc parity target
+# (max(standard_quality) - delta). Same value as the other experiments.
+_NONINFERIORITY_DELTA = 0.03
 
 
 def _fair_control_fingerprint(cfg: ArchBenchExperimentConfig) -> dict:
@@ -82,7 +99,7 @@ def run_archbench(cfg: ArchBenchExperimentConfig, out_dir: str) -> dict:
             for condition in ab.conditions:
                 trainer = build_trainer(cfg, condition, r, train_corpus, ab.device)
                 for ckpt in trainer.run():
-                    ckpt.regime = task  # record which task/corpus this curve is for
+                    ckpt.task = task  # record which task/corpus this curve is for
                     all_curves.append(ckpt)
 
     # --- manifest ----------------------------------------------------------
@@ -105,12 +122,15 @@ def run_archbench(cfg: ArchBenchExperimentConfig, out_dir: str) -> dict:
     with open(os.path.join(out_dir, "curve.jsonl"), "w") as jf:
         for c in all_curves:
             jf.write(json.dumps({
-                "task": c.regime, "step": c.step, "tokens_seen": c.tokens_seen,
+                "task": c.task, "step": c.step, "tokens_seen": c.tokens_seen,
                 "train_loss": c.train_loss,
                 "quality": c.quality, "memory_bytes": c.memory_bytes,
-                "redundancy": c.redundancy, "condition": c.condition}) + "\n")
+                "redundancy": c.redundancy, "condition": c.condition,
+                "drift_rms": c.drift_rms}) + "\n")
 
     aggregate = _aggregate(all_curves, cfg)
+    finetune_posthoc = _finetune_posthoc(all_curves, cfg)
+    aggregate["finetune_posthoc"] = finetune_posthoc
     _write_aggregate(out_dir, aggregate)
     stats_out = _compute_stats(all_curves, cfg)
     with open(os.path.join(out_dir, "stats.json"), "w") as fh:
@@ -120,14 +140,16 @@ def run_archbench(cfg: ArchBenchExperimentConfig, out_dir: str) -> dict:
         "out_dir": out_dir, "is_smoke": cfg.is_smoke,
         "experiment": "stage_f_archbench", "trainer": ab.trainer, "task": ab.task,
         "target_quality": ab.target_quality,
-        "n_curves": len(all_curves), "aggregate": aggregate, "stats": stats_out}
+        "n_curves": len(all_curves), "aggregate": aggregate, "stats": stats_out,
+        "finetune_posthoc": finetune_posthoc,
+    }
     with open(os.path.join(out_dir, "summary.json"), "w") as fh:
         json.dump(summary, fh, indent=2)
     return summary
 
 
 def _agg_key(c: ArchCheckpoint) -> tuple:
-    return (c.regime, c.redundancy, c.condition)
+    return (c.task, c.redundancy, c.condition)
 
 
 def _aggregate(curves: list[ArchCheckpoint], cfg) -> dict:
@@ -164,19 +186,99 @@ def _aggregate(curves: list[ArchCheckpoint], cfg) -> dict:
 
 
 def _write_aggregate(out_dir: str, aggregate: dict) -> None:
+    # aggregate.json carries the per-cell entries PLUS the nested
+    # ``finetune_posthoc`` block (it is a separate, clearly-labeled analysis on
+    # the same run). aggregate.csv only carries the per-cell rows (one row per
+    # task x redundancy x condition), so split it out for the CSV writer.
+    finetune_posthoc = aggregate.get("finetune_posthoc")
     with open(os.path.join(out_dir, "aggregate.json"), "w") as fh:
         json.dump(aggregate, fh, indent=2)
-    if not aggregate:
-        return
-    cols = ["task", "redundancy", "condition", "quality_final", "quality_max",
-            "memory_bytes_peak", "reached_target",
-            "tokens_to_target", "bytes_ratio_vs_standard",
-            "quality_delta_vs_standard"]
-    with open(os.path.join(out_dir, "aggregate.csv"), "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=cols)
-        w.writeheader()
-        for e in aggregate.values():
-            w.writerow({k: e.get(k) for k in cols})
+    per_cell = {k: v for k, v in aggregate.items()
+                if k != "finetune_posthoc" and isinstance(v, dict)
+                and "task" in v and "condition" in v}
+    if per_cell:
+        cols = ["task", "redundancy", "condition", "quality_final", "quality_max",
+                "memory_bytes_peak", "reached_target",
+                "tokens_to_target", "bytes_ratio_vs_standard",
+                "quality_delta_vs_standard"]
+        with open(os.path.join(out_dir, "aggregate.csv"), "w", newline="") as fh:
+            w = csv.DictWriter(fh, fieldnames=cols)
+            w.writeheader()
+            for e in per_cell.values():
+                w.writerow({k: e.get(k) for k in cols})
+
+
+def _finetune_posthoc(curves: list[ArchCheckpoint], cfg) -> dict:
+    """Fine-tuning post-hoc analysis on the toy models: ``standard_memory`` vs
+    ``ham_memory`` cost-to-target + L2 weight drift (sqrt(sum((p - p_init)**2))
+    over all params). The toy LM is trained from scratch (no pretrained
+    knowledge to forget -> no zero-shot forgetting arm); the diagnostic is the
+    weight-drift overhead HAM's extra parameters add to reach the same target.
+
+    Returns a dict keyed by ``(task, redundancy)`` plus a ``noninferiority_delta``
+    field. Each cell carries the parity target, each arm's cost-to-target, the
+    drift at target, and the HAM/standard ratios. The recall task is the
+    primary headline (the toy associative-recall task the design preys on).
+    """
+    by_key: dict[tuple, list[ArchCheckpoint]] = defaultdict(list)
+    for c in curves:
+        by_key[_agg_key(c)].append(c)
+    out: dict = {
+        "noninferiority_delta": _NONINFERIORITY_DELTA,
+        "description": (
+            "Fine-tuning post-hoc on the stage-F toy models: standard flat "
+            "memory block vs HAM memory block. Cost-to-target + L2 weight "
+            "drift (sqrt(sum((p - p_init)**2)) over all params) at the parity "
+            "target = max(standard_quality) - delta. The toy is trained from "
+            "scratch (no forgetting arm)."),
+        "primary_task": "recall",
+        "cells": {},
+    }
+    for task in _tasks(cfg):
+        for r in cfg.archbench.redundancy_levels:
+            std_curve = sorted(by_key.get((task, r, COST_STD), []),
+                               key=lambda c: c.step)
+            ham_curve = sorted(by_key.get((task, r, COST_HAM), []),
+                               key=lambda c: c.step)
+            if not std_curve or not ham_curve:
+                continue
+            target = parity_target(std_curve, _NONINFERIORITY_DELTA)
+            std_cost = cost_to_target(std_curve, target, interpolate=False)
+            ham_cost = cost_to_target(ham_curve, target, interpolate=False)
+            cell = {
+                "task": task, "redundancy": r,
+                "target_quality": target,
+                "standard": {
+                    "reached": std_cost["reached"],
+                    "quality_at_target": std_cost["quality_at_target"],
+                    "optimizer_steps_to_target": std_cost["optimizer_steps_to_target"],
+                    "training_tokens_to_target": std_cost["training_tokens_to_target"],
+                    "drift_rms_at_target": std_cost["drift_rms_at_target"],
+                    "final_quality": std_cost["final_quality"],
+                    "max_quality": std_cost["max_quality"],
+                },
+                "ham": {
+                    "reached": ham_cost["reached"],
+                    "quality_at_target": ham_cost["quality_at_target"],
+                    "optimizer_steps_to_target": ham_cost["optimizer_steps_to_target"],
+                    "training_tokens_to_target": ham_cost["training_tokens_to_target"],
+                    "drift_rms_at_target": ham_cost["drift_rms_at_target"],
+                    "final_quality": ham_cost["final_quality"],
+                    "max_quality": ham_cost["max_quality"],
+                },
+                "cost_ratio_steps_ham_over_standard": cost_ratio(
+                    ham_cost, std_cost, "optimizer_steps_to_target"),
+                "cost_ratio_tokens_ham_over_standard": cost_ratio(
+                    ham_cost, std_cost, "training_tokens_to_target"),
+                "drift_ratio_ham_over_standard": (
+                    (ham_cost["drift_rms_at_target"] / std_cost["drift_rms_at_target"])
+                    if (ham_cost["reached"] and std_cost["reached"]
+                        and ham_cost["drift_rms_at_target"] is not None
+                        and std_cost["drift_rms_at_target"] not in (None, 0.0))
+                    else None),
+            }
+            out["cells"][f"{task}|r={r}"] = cell
+    return out
 
 
 def _compute_stats(curves: list[ArchCheckpoint], cfg) -> dict:

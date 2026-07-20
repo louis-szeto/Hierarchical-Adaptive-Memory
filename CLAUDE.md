@@ -117,40 +117,16 @@ src/ham/
   compression/      text_codec.py (zstd/zlib/raw), vector_quant.py (int8/int4/PQ), serialize.py (ByteAccounting, real bytes)
   datasets/         synthetic (local, carries gold-memory ids), longmemeval, locomo (loud errors if missing)
   architecture/     OPTIONAL stage-F torch prototype (TierState/MemoryRouter/fusion/HAMBlock) + toy demo
-  training/         OPTIONAL stage-C fine-tuning cost-to-target experiment (mock/hf trainers, own runner + report)
-  archbench/        OPTIONAL stage-F toy-architecture memory-block compression experiment (FlatMemory/HamMemory, mock/torch trainers, own runner + report)
+  archbench/        OPTIONAL stage-F toy-architecture memory-block compression experiment (FlatMemory/HamMemory, mock/torch trainers, own runner + report + fine-tuning post-hoc on standard-vs-HAM memory blocks)
   kvbench/          OPTIONAL stage-D KV-cache compression experiment on a frozen HF model (mock/torch trainers, own runner + report)
-configs/            one YAML per experiment (smoke, synthetic, longmemeval, locomo, poc_real_smollm, publication_7b, finetune_smoke, finetune_smollm)
+configs/            one YAML per experiment (smoke, synthetic, longmemeval, locomo, poc_real_smollm, publication_7b, archbench_smoke, archbench_toy, kvbench_smoke, kvbench_smollm)
 tests/              mirrors the modules; test_fair_controls.py and test_baselines_report.py guard the integrity rules
 docs/               EXPERIMENT_PROTOCOL, REPRODUCIBILITY, METRICS_SCHEMA, STAGE_TAXONOMY, ARCHITECTURE, BASELINE_CROSSWALK
 ```
 
-## Stage-C fine-tuning experiment (kept separate)
-
-`ham.training.*` is an **optional second experiment** (lifecycle stage C) that is
-deliberately walled off from the stage-E study above — it modifies weights, so it
-does **not** share the frozen-LLM invariant and must never route through
-`runner.run_experiment`. See `docs/FINETUNING_PROTOCOL.md`.
-
-- **Two arms, one variable.** `weights_only` (eval with `memory_off`) vs
-  `ham_augmented` (eval with `ham_memory`) — both fine-tuned identically; only
-  the eval-time prompt differs. Headline = **cost-to-target** (training tokens /
-  wall-clock / optimizer steps to reach a target accuracy) + the `ham/weights`
-  ratio. Default target = `max(weights_only) − δ` (parity with memorization).
-- **Config:** `FinetuneExperimentConfig` + `FinetuneConfig` (loaded by
-  `load_finetune_config`), separate from `ExperimentConfig`. `is_smoke` is
-  `trainer == "mock"`; `base_weights_changed` is truthfully `trainer == "hf"`.
-- **Trainers:** `MockTrainer` (deterministic synthetic curve, no torch →
-  watermarked `SMOKE TEST`, enables the tests) and `HFTrainer` (real SFT off
-  `HFBackend.model`/`.tokenizer`; lazy torch, fails loudly). Both return
-  `list[CheckpointEval]` with per-example results per arm.
-- **Entry points:** `ham finetune` / `ham finetune-report` (own runner + report;
-  do not extend stage-E `report.py`). Outputs: `curve.jsonl`, `aggregate`,
-  `stats`, `summary`, `manifest` (stage C + its own fair-control fingerprint).
-
 ## Stage-F architecture memory-block experiment (kept separate)
 
-`ham.archbench.*` is an **optional third experiment** (lifecycle stage F) and the
+`ham.archbench.*` is an **optional second experiment** (lifecycle stage F) and the
 mechanistic proof of the *compression* thesis: identical toy LMs differ ONLY in
 their memory-block policy (`FlatMemory` vs HAM-compressed `HamMemory` with int4
 prototypes + frequency-driven consolidation). See `docs/ARCHBENCH_PROTOCOL.md`.
@@ -173,10 +149,22 @@ prototypes + frequency-driven consolidation). See `docs/ARCHBENCH_PROTOCOL.md`.
   vs `standard_memory` scales with corpus redundancy (the proof that frequency is
   the mechanism). Ablations (`ham_uniform`/`ham_no_consolidation`/`ham_random_alloc`)
   isolate precision + consolidation. See `docs/ARCHBENCH_PROTOCOL.md`.
+- **Fine-tuning post-hoc (built into archbench, NOT a separate experiment):** the
+  runner also compares `standard_memory` vs `ham_memory` on cost-to-target +
+  L2 weight drift (`sqrt(sum((p - p_init)**2))` over all params) on the same toy
+  models. `TorchArchTrainer` snapshots the initial params and records `drift_rms`
+  on every `ArchCheckpoint`; `MockArchTrainer` emits a synthetic sqrt(step) drift
+  curve. The runner builds a `finetune_posthoc` block in `aggregate.json`/
+  `summary.json` (parity target = max(standard_quality) − 0.03; cost = first
+  checkpoint at-or-above it; HAM/standard step/token/drift ratios); the report
+  emits `table_finetune_posthoc.md`/`.csv`. The toy is trained from scratch, so
+  there is no zero-shot forgetting arm — the diagnostic is the drift overhead
+  HAM's extra router/fusion/encoding parameters add to reach the same quality.
+  Pure-math curve helpers live in `archbench/cost.py`.
 
 ## Stage-D KV-cache compression experiment (kept separate)
 
-`ham.kvbench.*` is an **optional fourth experiment** (lifecycle stage D): compress
+`ham.kvbench.*` is an **optional third experiment** (lifecycle stage D): compress
 a frozen HF model's KV cache and measure byte-honest size + decode latency +
 next-token quality. See `docs/KVBENCH_PROTOCOL.md`.
 
