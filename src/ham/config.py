@@ -28,6 +28,7 @@ class BackendConfig:
     top_p: float = 1.0
     seed: int = 0
     trust_remote_code: bool = False
+    base_url: str = ""  # llamaserver endpoint, e.g. http://127.0.0.1:8080/v1
 
 
 @dataclass
@@ -131,14 +132,14 @@ class MemoryConfig:
 
 @dataclass
 class DatasetConfig:
-    name: str = "synthetic"  # "synthetic" | "longmemeval" | "locomo"
+    name: str = "synthetic"  # "synthetic" | "longmemeval"
     # Synthetic knobs.
     num_examples: int = 12
     num_sessions: int = 5
     facts_per_session: int = 4
     distractors_per_session: int = 3
     # Real-dataset knobs.
-    path: str | None = None  # local json path (longmemeval/locomo)
+    path: str | None = None  # local json path (longmemeval)
     hf_repo: str | None = None
     hf_file: str | None = None
     split: str | None = None

@@ -31,11 +31,9 @@ stage:
   trainable_router: false
 
 backend:
-  kind: hf
-  model_id: Qwen/Qwen3-1.7B   # benchmark backbone (frozen); pinned commit in Appendix provenance
-  device: cpu
-  dtype: bfloat16
-  quantization: null                      # set "4bit" for 7B/8B on one workstation
+  kind: llamaserver
+  model_id: Qwen/Qwen3.5-2B   # for tokenizer; the weights are in the GGUF served by llama-server
+  base_url: http://127.0.0.1:8080
   max_new_tokens: 64
   temperature: 0.0
 

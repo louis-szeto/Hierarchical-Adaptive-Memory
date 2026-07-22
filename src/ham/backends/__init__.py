@@ -16,4 +16,7 @@ def build_backend(cfg: BackendConfig) -> Backend:
         from .hf import HFBackend  # imported lazily so torch is not required for mock runs
 
         return HFBackend(cfg)
+    if cfg.kind == "llamaserver":
+        from .llamaserver import LlamaServerBackend
+        return LlamaServerBackend(cfg)
     raise ValueError(f"unknown backend kind: {cfg.kind!r}")

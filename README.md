@@ -151,10 +151,6 @@ python -m ham.cli run    --config configs/longmemeval.yaml --out results/lme
 python -m ham.cli report --run-dir results/lme --out results/lme/paper_artifacts
 
 # LoCoMo (very long-term conversational memory, 10 conversations).
-# Clone https://github.com/snap-research/locomo and set dataset.path to
-# data/locomo10.json in configs/locomo.yaml, then:
-python -m ham.cli run    --config configs/locomo.yaml --out results/locomo
-python -m ham.cli report --run-dir results/locomo --out results/locomo/paper_artifacts
 ```
 
 If a dataset is gated/offline/missing, the adapter **fails loudly** with
@@ -273,9 +269,9 @@ src/ham/
   architecture/  OPTIONAL stage-F prototype: layer (router/fusion/tiers/HAMBlock) + toy demo
   archbench/     OPTIONAL stage-F toy-architecture memory-block compression experiment (FlatMemory/HamMemory, mock/torch trainers, own runner + report + fine-tuning post-hoc)
   kvbench/        OPTIONAL stage-D KV-cache compression experiment on a frozen HF model (mock/torch trainers, own runner + report)
-  datasets/      synthetic (local, with gold-memory ids), longmemeval, locomo adapters
+  datasets/      synthetic (local, with gold-memory ids), longmemeval adapter
   metrics.py stats.py instrumentation.py manifest.py runner.py report.py cli.py config.py
-configs/         smoke, synthetic, longmemeval, locomo, publication_7b, poc_real_smollm, archbench_smoke, archbench_toy, kvbench_smoke, kvbench_smollm
+configs/         smoke, synthetic, longmemeval, publication_7b, poc_real_smollm, archbench_smoke, archbench_toy, kvbench_smoke, kvbench_smollm
 docs/            STAGE_TAXONOMY, EXPERIMENT_PROTOCOL, METRICS_SCHEMA, REPRODUCIBILITY,
                  METHODOLOGY_APPENDIX, ARCHITECTURE, BASELINE_CROSSWALK (.csv/.json)
 tests/           quantization, serialize, importance/tiering, consolidation,

@@ -1,4 +1,4 @@
-.PHONY: help install install-hf test smoke smoke-figures longmemeval locomo synthetic report arch-demo poc-real archbench-smoke archbench-toy kvbench-smoke kvbench-real clean
+.PHONY: help install install-hf test smoke smoke-figures longmemeval synthetic report arch-demo poc-real archbench-smoke archbench-toy kvbench-smoke kvbench-real clean
 
 PY ?= python
 CONFIG ?= configs/smoke.yaml
@@ -13,7 +13,6 @@ help:
 	@echo "  smoke-figures  Regenerate tables + figures from the smoke run (watermarked)"
 	@echo "  synthetic      Run the deterministic synthetic multi-session benchmark"
 	@echo "  longmemeval    Run LongMemEval (requires the datasets extra + local data)"
-	@echo "  locomo         Run LoCoMo (requires local locomo10.json)"
 	@echo "  report         Build paper-ready tables/figures from a results dir (OUT=...)"
 	@echo "  arch-demo      Run the optional stage-F HAM-layer toy integration (needs torch)"
 	@echo "  poc-real       Small REAL-MODEL proof of concept (SmolLM2-135M-Instruct, CPU)"
@@ -43,9 +42,6 @@ synthetic:
 
 longmemeval:
 	$(PY) -m ham.cli run --config configs/longmemeval.yaml --out results/longmemeval
-
-locomo:
-	$(PY) -m ham.cli run --config configs/locomo.yaml --out results/locomo
 
 report:
 	$(PY) -m ham.cli report --run-dir $(OUT) --out $(OUT)/paper_artifacts

@@ -115,11 +115,11 @@ src/ham/
   memory/           ham.py (orchestrator), store.py (tiers/MemoryRecord), importance.py (signals+bits),
                     consolidation.py (leader-clustering prototypes), retrieval.py (cosine/faiss/lexical)
   compression/      text_codec.py (zstd/zlib/raw), vector_quant.py (int8/int4/PQ), serialize.py (ByteAccounting, real bytes)
-  datasets/         synthetic (local, carries gold-memory ids), longmemeval, locomo (loud errors if missing)
+  datasets/         synthetic (local, carries gold-memory ids), longmemeval (loud errors if missing)
   architecture/     OPTIONAL stage-F torch prototype (TierState/MemoryRouter/fusion/HAMBlock) + toy demo
   archbench/        OPTIONAL stage-F toy-architecture memory-block compression experiment (FlatMemory/HamMemory, mock/torch trainers, own runner + report + fine-tuning post-hoc on standard-vs-HAM memory blocks)
   kvbench/          OPTIONAL stage-D KV-cache compression experiment on a frozen HF model (mock/torch trainers, own runner + report)
-configs/            one YAML per experiment (smoke, synthetic, longmemeval, locomo, poc_real_smollm, publication_7b, archbench_smoke, archbench_toy, kvbench_smoke, kvbench_smollm)
+configs/            one YAML per experiment (smoke, synthetic, longmemeval, poc_real_smollm, publication_7b, archbench_smoke, archbench_toy, kvbench_smoke, kvbench_smollm)
 tests/              mirrors the modules; test_fair_controls.py and test_baselines_report.py guard the integrity rules
 docs/               EXPERIMENT_PROTOCOL, REPRODUCIBILITY, METRICS_SCHEMA, STAGE_TAXONOMY, ARCHITECTURE, BASELINE_CROSSWALK
 ```

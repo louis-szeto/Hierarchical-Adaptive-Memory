@@ -32,8 +32,6 @@ model provides a chat template). The mock backend uses a documented regex proxy.
   `longmemeval_s.json`, or install the `[datasets]` extra to attempt an HF-hub
   download of `xiaowu0162/longmemeval-cleaned`. If neither works, the adapter
   raises with actionable guidance and **fabricates nothing**.
-- **LoCoMo:** clone `snap-research/locomo` and point `dataset.path` at
-  `data/locomo10.json`. Missing file ⇒ loud error.
 
 ## Large models are never auto-downloaded in tests
 Tests and CI use only the mock backend + synthetic data. Real HF models are

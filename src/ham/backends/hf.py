@@ -60,6 +60,10 @@ class HFBackend(Backend):
         if "quantization_config" not in model_kwargs:
             self.model.to(self.device)
         self.model.eval()
+        if self.device == "cuda":
+            # Cap VRAM at 50% so the shared display GPU (Xorg) has headroom;
+            # the NVIDIA Open Kernel Module asserts when VRAM is exhausted.
+            torch.cuda.set_per_process_memory_fraction(0.5)
 
     def supports_cuda_metrics(self) -> bool:
         return self.device == "cuda"
@@ -67,8 +71,12 @@ class HFBackend(Backend):
     def _render(self, prompt: str) -> str:
         if hasattr(self.tokenizer, "apply_chat_template") and self.tokenizer.chat_template:
             messages = [{"role": "user", "content": prompt}]
+            # Pass enable_thinking=False to disable Qwen3/3.5's <think>…</think>
+            # mode so the token budget goes to the answer, not reasoning traces.
+            # Jinja templates silently ignore unused kwargs → safe for all models.
             return self.tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
+                messages, tokenize=False, add_generation_prompt=True,
+                enable_thinking=False
             )
         return prompt
 
@@ -101,6 +109,12 @@ class HFBackend(Backend):
             torch.cuda.synchronize()
         prefill = time.perf_counter() - t0
 
+        # Free the prefill KV cache before generate() builds its own — without
+        # this, peak VRAM doubles at the transition and the NVIDIA Open Kernel
+        # Module on the shared display GPU asserts (NV_ERR_GPU_IN_FULLCHIP_RESET).
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
+
         t1 = time.perf_counter()
         with torch.no_grad():
             out = self.model.generate(**inputs, **gen_kwargs)
@@ -112,6 +126,11 @@ class HFBackend(Backend):
         output_tokens = int(gen_ids.shape[0])
         text = self.tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
         decode = max(total_gen - prefill, 0.0)
+
+        # Free generation tensors to prevent VRAM fragmentation over many calls.
+        del out
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
 
         return GenerationResult(
             text=text,
