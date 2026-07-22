@@ -6,6 +6,7 @@ exact token counting (CPU-only, no model weights on GPU)."""
 from __future__ import annotations
 
 import time
+from urllib.parse import urlparse
 
 import requests
 
@@ -17,7 +18,12 @@ class LlamaServerBackend(Backend):
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.base_url = (cfg.base_url or "http://127.0.0.1:8080").rstrip("/")
+        base_url = (cfg.base_url or "http://127.0.0.1:8080").rstrip("/")
+        parsed = urlparse(base_url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(
+                f"base_url must use http or https scheme, got {parsed.scheme!r}")
+        self.base_url = base_url
         self.model_id = cfg.model_id
         self.max_new_tokens = cfg.max_new_tokens
         self.temperature = cfg.temperature
@@ -38,7 +44,8 @@ class LlamaServerBackend(Backend):
                 "temperature": self.temperature,
                 "chat_template_kwargs": {"enable_thinking": False},
             },
-            timeout=300,
+            timeout=(30, 300),
+            verify=True,
         )
         if resp.status_code != 200:
             raise RuntimeError(
@@ -53,8 +60,7 @@ class LlamaServerBackend(Backend):
             prompt_tokens=usage.get("prompt_tokens", 0),
             output_tokens=usage.get("completion_tokens", 0),
             total_latency_s=elapsed,
-            extra={"backend": "llamaserver", "base_url": self.base_url,
-                   "model_id": self.model_id},
+            extra={"backend": "llamaserver", "model_id": self.model_id},
         )
 
     def count_tokens(self, text: str) -> int:
