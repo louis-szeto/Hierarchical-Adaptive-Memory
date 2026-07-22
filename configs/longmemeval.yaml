@@ -13,15 +13,8 @@ name: longmemeval_s
 seed: 0
 conditions:
   - memory_off
-  - full_history
   - uncompressed_rag
-  - recency_fifo
-  - static_prototype
-  - uniform_quantization
   - ham_memory
-  - random_tiering
-  - no_consolidation
-  - lexical_retrieval
 
 stage:
   target_stage: E_inference_external_memory
@@ -32,8 +25,8 @@ stage:
 
 backend:
   kind: llamaserver
-  model_id: Qwen/Qwen3.5-2B   # for tokenizer; the weights are in the GGUF served by llama-server
-  base_url: http://127.0.0.1:8080
+  model_id: HuggingFaceTB/SmolLM2-135M-Instruct   # for tokenizer; weights served by llama-server
+  base_url: http://127.0.0.1:8081
   max_new_tokens: 64
   temperature: 0.0
 
@@ -62,7 +55,7 @@ dataset:
   path: null                               # e.g. data/longmemeval_oracle.json
   hf_repo: xiaowu0162/longmemeval-cleaned
   hf_file: longmemeval_oracle.json
-  sample_limit: 100                        # null => all 500 questions
+  sample_limit: null                       # all 500 questions
   seed: 0
 
 eval:

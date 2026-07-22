@@ -56,7 +56,11 @@ class HashEmbedder:
 
 
 class SentenceTransformerEmbedder:
-    """Real embeddings via sentence-transformers (optional dependency)."""
+    """Real embeddings via sentence-transformers (optional dependency).
+
+    Includes a text-keyed embedding cache so that re-ingesting the same history
+    across multiple conditions (each builds a fresh HAMemory) does not re-encode
+    the same chunks. The cache is process-local and keyed by text hash."""
 
     kind = "sentence-transformers"
 
@@ -67,12 +71,30 @@ class SentenceTransformerEmbedder:
         self.model_id = model_id
         self.normalize = normalize
         self.dim = int(self.model.get_sentence_embedding_dimension())
+        self._cache: dict[int, np.ndarray] = {}
 
     def encode(self, texts: list[str]) -> np.ndarray:
-        vecs = self.model.encode(
-            texts, normalize_embeddings=self.normalize, show_progress_bar=False
-        )
-        return np.asarray(vecs, dtype=np.float32)
+        results: list[np.ndarray | None] = []
+        to_encode: list[str] = []
+        for t in texts:
+            h = hash(t)
+            if h in self._cache:
+                results.append(self._cache[h])
+            else:
+                results.append(None)
+                to_encode.append(t)
+        if to_encode:
+            new_vecs = self.model.encode(
+                to_encode, normalize_embeddings=self.normalize,
+                show_progress_bar=False)
+            ti = 0
+            for i in range(len(results)):
+                if results[i] is None:
+                    h = hash(texts[i])
+                    self._cache[h] = new_vecs[ti]
+                    results[i] = new_vecs[ti]
+                    ti += 1
+        return np.asarray(results, dtype=np.float32)
 
 
 def build_embedder(cfg: EmbeddingConfig):
