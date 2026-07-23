@@ -1,0 +1,50 @@
+# Stage-D KV-cache-compression experiment -- REAL torch (frozen SmolLM2-135M).
+# n=50 variant: identical to kvbench_smollm.yaml except n_contexts is raised
+# from 8 to 50 for statistical power (95% bootstrap CIs over contexts). The
+# first 8 contexts per redundancy level match the n=8 run exactly (deterministic
+# seed=0), so this is a strict superset. Bootstrap resamples raised to 10000 to
+# match the external-memory study's CI precision.
+#
+# Requires torch + transformers: pip install -e ".[hf]"
+#   ham kvbench --config configs/kvbench_smollm_n50.yaml --out results/kvbench_smollm_n50
+name: kvbench_smollm_n50
+seed: 0
+notes: "REAL MODEL, PROOF OF CONCEPT -- KV-cache compression on SmolLM2-135M; n=50 contexts for CIs; not a production claim."
+
+stage:
+  target_stage: D_inference_kv_compression
+  base_weights_changed: false          # frozen model; only KV compressed
+  persistent_across_sessions: false
+  integration_mode: kv_cache_compression
+  trainable_router: false
+
+backend:
+  kind: hf
+  model_id: HuggingFaceTB/SmolLM2-135M-Instruct
+  device: cpu                          # CPU: shared display GPU crashed under load. CPU timing is noisier but safe.
+  dtype: float32
+  quantization: null
+  max_new_tokens: 8
+  temperature: 0.0
+  seed: 0
+
+stats:
+  bootstrap_resamples: 10000
+  permutation_resamples: 10000
+  ci: 0.95
+  seed: 0
+
+kvbench:
+  trainer: torch
+  conditions: [full_kv, ham_kv, uniform_quant_kv, h2o_kv, random_evict_kv, ham_no_cluster]
+  redundancy_levels: [0.0, 0.5, 0.9]
+  keep_ratios: [0.25, 0.5, 0.75]
+  cluster_radius: 0.25
+  kv_bits: 4
+  n_contexts: 50                       # raised from 8 for 95% CI statistical power
+  context_len: 1024
+  n_distinct_spans: 128
+  span_len: 8
+  decode_len: 16
+  target_quality: 0.9
+  device: cpu

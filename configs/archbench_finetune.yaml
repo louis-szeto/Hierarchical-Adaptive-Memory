@@ -2,7 +2,7 @@
 # toy-architecture models (HEADLINE post-hoc).
 #
 # Two toy arms only (standard_memory flat block vs ham_memory HAM block), recall
-# task, r=0.0, same toy settings + AdamW cadence (checkpoint_every=20) as the
+# task, r=0.0, same toy settings + AdamW cadence (checkpoint_every=1) as the
 # toy-architecture study. The runner runs PRETRAIN first (saves each condition's
 # final state_dict to <out>/pretrained_checkpoints/<condition>.pt), then loads
 # those weights and FINE-TUNES both arms on a HELD-OUT association set (a fresh
@@ -53,8 +53,8 @@ archbench:
   optimizer: adamw
   learning_rate: 1.0e-3
   batch_size: 16
-  max_steps: 40
-  checkpoint_every: 20
+  max_steps: 50
+  checkpoint_every: 1
   seq_len: 64
   n_train_streams: 256
   n_eval_streams: 64

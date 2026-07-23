@@ -32,16 +32,33 @@ _FLOAT32 = 4
 
 
 def extract_legacy_cache(model, input_ids) -> tuple:
-    """Prefill ``input_ids`` and return the KV cache in legacy tuple format."""
+    """Prefill ``input_ids`` and return the KV cache in legacy tuple format
+    (per-layer ``(K, V)``, each ``(batch, num_kv_heads, seq, head_dim)``).
+
+    Version-robust: uses the legacy ``to_legacy_cache()`` API where available
+    (transformers <=4.4x), otherwise reads the current ``DynamicCache.layers``
+    API (transformers 5.x) in which ``to_legacy_cache``/``from_legacy_cache``
+    were removed and per-layer tensors live on ``layer.keys``/``layer.values``.
+    """
     with torch.no_grad():
         out = model(input_ids, use_cache=True)
-    return out.past_key_values.to_legacy_cache()
+    cache = out.past_key_values
+    if hasattr(cache, "to_legacy_cache"):
+        return cache.to_legacy_cache()
+    return tuple((layer.keys, layer.values) for layer in cache.layers)
 
 
 def rebuild_cache(comp_legacy):
-    """Rebuild a DynamicCache from a compressed legacy tuple for re-injection."""
+    """Rebuild a DynamicCache from a compressed legacy tuple for re-injection.
+
+    Version-robust: ``from_legacy_cache`` where available, otherwise the current
+    ``DynamicCache(ddp_cache_data=...)`` constructor.
+    """
     from transformers.cache_utils import DynamicCache
-    return DynamicCache.from_legacy_cache(tuple(comp_legacy))
+    comp_legacy = tuple(comp_legacy)
+    if hasattr(DynamicCache, "from_legacy_cache"):
+        return DynamicCache.from_legacy_cache(comp_legacy)
+    return DynamicCache(ddp_cache_data=list(comp_legacy))
 
 
 def _shapes(legacy):
