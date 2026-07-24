@@ -6,10 +6,14 @@ authors:
   given-names: "K. C."
   orcid: "https://orcid.org/0009-0000-6576-0252"
 type: article
-doi: 10.2139/ssrn.7170898
+doi: "10.2139/ssrn.7170898"
 date-released: "2026-07-23"
-keywords:
-  - knowledge representation
-  - knowledge compression
-  - adaptive memory
-  - predictive coding
+preferred-citation:
+  type: article
+  authors:
+  - family-names: Szeto
+    given-names: "K. C."
+    orcid: "https://orcid.org/0009-0000-6576-0252"
+  doi: "10.2139/ssrn.7170898"
+  title: "Hierarchical Adaptive Memory for Language Models: A Tiered, Utility-Driven Memory Layer with Variable-Precision Consolidation"
+  year: 2026
